@@ -62,9 +62,9 @@ export function useDocumentAnalyzer() {
     try {
       await sendMessage('updateAnalyzingState', {
         isAnalyzing: analyzing,
-        linkData,
-        error,
-      }, 'background')
+        linkData: linkData ? JSON.parse(JSON.stringify(linkData)) : null,
+        error: error || null,
+      } as any, 'background')
     }
     catch (err) {
       console.error('更新分析状态失败:', err)
