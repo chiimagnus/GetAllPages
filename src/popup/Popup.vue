@@ -159,7 +159,7 @@ const statusClass = computed(() => {
         @click="handleAnalyze"
       >
         <span v-if="isAnalyzing">🔄 智能分析中...</span>
-        <span v-else>� 智能滚动分析页面链接</span>
+        <span v-else>智能滚动分析页面链接</span>
       </button>
 
       <button
