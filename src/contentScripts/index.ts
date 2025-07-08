@@ -83,6 +83,9 @@ class DocumentAnalyzer {
   // 分析页面链接结构
   analyzeStructure(sidebarSelectors: string[], contentSelectors: string[]) {
     try {
+      // 清除之前的提取标记
+      this.clearExtractionIndicators()
+
       this.sidebarSelectors = sidebarSelectors
       this.contentSelectors = contentSelectors
 
@@ -141,6 +144,9 @@ class DocumentAnalyzer {
 
         links.push(linkInfo)
         console.log(`[GetAllPages] 添加有效链接: ${text} -> ${absoluteUrl}`)
+
+        // 在链接旁边添加提取成功标记
+        this.addExtractionIndicator(link as HTMLElement)
       }
       else {
         console.log(`[GetAllPages] 跳过无效链接: href="${href}", text="${text}", valid=${this.isValidDocumentLink(href || '')}`)
@@ -174,6 +180,52 @@ class DocumentAnalyzer {
       return context.length > 200 ? `${context.substring(0, 200)}...` : context
     }
     return ''
+  }
+
+  // 在链接旁边添加提取成功标记
+  private addExtractionIndicator(linkElement: HTMLElement) {
+    // 避免重复添加标记
+    if (linkElement.querySelector('.getallpages-extracted-indicator')) {
+      return
+    }
+
+    const indicator = document.createElement('span')
+    indicator.className = 'getallpages-extracted-indicator'
+    indicator.innerHTML = '✅'
+    indicator.style.cssText = `
+      margin-left: 4px;
+      font-size: 12px;
+      opacity: 0.8;
+      display: inline-block;
+      vertical-align: middle;
+      animation: getallpages-fade-in 0.3s ease-in;
+    `
+
+    // 添加动画样式
+    if (!document.getElementById('getallpages-indicator-style')) {
+      const style = document.createElement('style')
+      style.id = 'getallpages-indicator-style'
+      style.textContent = `
+        @keyframes getallpages-fade-in {
+          from { opacity: 0; transform: scale(0.5); }
+          to { opacity: 0.8; transform: scale(1); }
+        }
+        .getallpages-extracted-indicator:hover {
+          opacity: 1;
+          transform: scale(1.1);
+          transition: all 0.2s ease;
+        }
+      `
+      document.head.appendChild(style)
+    }
+
+    linkElement.appendChild(indicator)
+  }
+
+  // 清除所有提取标记
+  private clearExtractionIndicators() {
+    const indicators = document.querySelectorAll('.getallpages-extracted-indicator')
+    indicators.forEach(indicator => indicator.remove())
   }
 
   // 验证是否为有效的文档链接
@@ -401,6 +453,9 @@ class DocumentAnalyzer {
     }
 
     try {
+      // 清除之前的提取标记
+      this.clearExtractionIndicators()
+
       const allLinks: any[] = []
 
       this.selectedElements.forEach((element, index) => {
@@ -434,6 +489,9 @@ class DocumentAnalyzer {
   // 提取当前页面的链接信息（保留原有功能）
   extractPageLinks(sidebarSelectors: string[], contentSelectors: string[]) {
     try {
+      // 清除之前的提取标记
+      this.clearExtractionIndicators()
+
       this.sidebarSelectors = sidebarSelectors
       this.contentSelectors = contentSelectors
 
