@@ -5,12 +5,12 @@ import { useDocumentAnalyzer } from '~/composables/useDocumentAnalyzer'
 const {
   isAnalyzing,
   isExtracting,
-  currentStructure,
+  currentLinkData,
   extractionProgress,
   checkPageStructure,
-  analyzeStructure,
-  startExtraction,
-  stopExtraction,
+  extractPageLinks,
+  generateMarkdownFile,
+  stopOperation,
 } = useDocumentAnalyzer()
 
 const currentTab = ref<browser.tabs.Tab | null>(null)
@@ -56,9 +56,9 @@ async function handleAnalyze() {
     return
 
   try {
-    const structure = await analyzeStructure(currentTab.value.id)
-    if (structure) {
-      statusMessage.value = `发现 ${structure.totalPages} 个页面`
+    const linkData = await extractPageLinks(currentTab.value.id)
+    if (linkData) {
+      statusMessage.value = `发现 ${linkData.summary.totalLinks} 个链接 (侧边栏: ${linkData.summary.sidebarLinksCount}, 内容: ${linkData.summary.contentLinksCount})`
     }
   }
   catch (error) {
@@ -68,17 +68,17 @@ async function handleAnalyze() {
 }
 
 async function handleExtract() {
-  if (!currentTab.value?.id || !currentStructure.value)
+  if (!currentTab.value?.id || !currentLinkData.value)
     return
 
   showProgress.value = true
   try {
-    await startExtraction(currentStructure.value, currentTab.value.id)
-    statusMessage.value = '提取完成！文件已下载'
+    await generateMarkdownFile(currentLinkData.value)
+    statusMessage.value = '链接文件已生成并下载！'
   }
   catch (error) {
-    console.error('提取失败:', error)
-    statusMessage.value = '提取失败，请重试'
+    console.error('生成失败:', error)
+    statusMessage.value = '生成失败，请重试'
   }
   finally {
     showProgress.value = false
@@ -86,9 +86,9 @@ async function handleExtract() {
 }
 
 function handleStop() {
-  stopExtraction()
+  stopOperation()
   showProgress.value = false
-  statusMessage.value = '已停止提取'
+  statusMessage.value = '已停止操作'
 }
 
 function openOptionsPage() {
@@ -120,7 +120,7 @@ const statusClass = computed(() => {
         GetAllPages
       </div>
       <div class="text-sm text-gray-500">
-        文档剪藏工具
+        链接提取工具
       </div>
     </div>
 
@@ -140,17 +140,17 @@ const statusClass = computed(() => {
         @click="handleAnalyze"
       >
         <span v-if="isAnalyzing">🔄 分析中...</span>
-        <span v-else-if="currentStructure">🔄 重新分析</span>
-        <span v-else>🔍 分析文档结构</span>
+        <span v-else-if="currentLinkData">🔄 重新分析</span>
+        <span v-else>🔍 分析页面链接</span>
       </button>
 
       <button
         class="w-full py-3 px-4 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        :disabled="!currentStructure || isExtracting"
+        :disabled="!currentLinkData || isExtracting"
         @click="handleExtract"
       >
-        <span v-if="isExtracting">⏸️ 提取中...</span>
-        <span v-else>📥 开始提取内容</span>
+        <span v-if="isExtracting">⏸️ 生成中...</span>
+        <span v-else>📄 生成Markdown文件</span>
       </button>
 
       <button
@@ -158,7 +158,7 @@ const statusClass = computed(() => {
         class="w-full py-2 px-4 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors"
         @click="handleStop"
       >
-        ⏹️ 停止提取
+        ⏹️ 停止操作
       </button>
 
       <button

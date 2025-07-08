@@ -1,25 +1,31 @@
 import { readonly, ref } from 'vue'
 import { sendMessage } from 'webext-bridge/popup'
 
-export interface PageInfo {
+export interface LinkInfo {
   id: string
   title: string
   url: string
+  source: 'sidebar' | 'content'
   level: number
-  parent?: string
-  content?: {
-    html: string
-    text: string
-    title: string
-    url: string
-  }
+  description: string
+  context: string
 }
 
-export interface DocumentStructure {
-  baseUrl: string
-  totalPages: number
-  pages: PageInfo[]
-  hierarchy: PageInfo[]
+export interface PageInfo {
+  title: string
+  url: string
+  domain: string
+}
+
+export interface LinkExtractionResult {
+  currentPage: PageInfo
+  sidebarLinks: LinkInfo[]
+  contentLinks: LinkInfo[]
+  summary: {
+    totalLinks: number
+    sidebarLinksCount: number
+    contentLinksCount: number
+  }
 }
 
 export interface AnalysisResult {
@@ -32,7 +38,7 @@ export interface AnalysisResult {
 export function useDocumentAnalyzer() {
   const isAnalyzing = ref(false)
   const isExtracting = ref(false)
-  const currentStructure = ref<DocumentStructure | null>(null)
+  const currentLinkData = ref<LinkExtractionResult | null>(null)
   const extractionProgress = ref({ current: 0, total: 0, currentPage: '' })
 
   // 常见的侧边栏选择器
@@ -84,7 +90,7 @@ export function useDocumentAnalyzer() {
       const result = await sendMessage('checkPageStructure', {
         sidebarSelectors,
         contentSelectors,
-      }, { context: 'content-script', tabId })
+      }, { context: 'content-script', tabId }) as AnalysisResult
       return result
     }
     catch (error) {
@@ -98,25 +104,25 @@ export function useDocumentAnalyzer() {
     }
   }
 
-  // 分析文档结构
-  const analyzeStructure = async (tabId: number): Promise<DocumentStructure | null> => {
+  // 提取页面链接
+  const extractPageLinks = async (tabId: number): Promise<LinkExtractionResult | null> => {
     isAnalyzing.value = true
     try {
-      const result = await sendMessage('analyzeStructure', {
+      const result = await sendMessage('extractPageLinks', {
         sidebarSelectors,
         contentSelectors,
       }, { context: 'content-script', tabId }) as any
 
       if (result.success) {
-        currentStructure.value = result.structure
-        return result.structure
+        currentLinkData.value = result.data
+        return result.data
       }
       else {
-        throw new Error(result.error || '分析失败')
+        throw new Error(result.error || '提取链接失败')
       }
     }
     catch (error) {
-      console.error('分析文档结构失败:', error)
+      console.error('提取页面链接失败:', error)
       throw error
     }
     finally {
@@ -124,23 +130,20 @@ export function useDocumentAnalyzer() {
     }
   }
 
-  // 开始批量提取
-  const startExtraction = async (structure: DocumentStructure, originalTabId: number) => {
+  // 生成并下载Markdown文件
+  const generateMarkdownFile = async (linkData: LinkExtractionResult) => {
     isExtracting.value = true
-    extractionProgress.value = { current: 0, total: structure.pages.length, currentPage: '' }
-
     try {
-      const result = await sendMessage('startExtraction', {
-        structure: JSON.parse(JSON.stringify(structure)),
-        originalTabId,
+      const result = await sendMessage('generateMarkdownFile', {
+        linkData: JSON.parse(JSON.stringify(linkData)),
       }, 'background') as any
 
       if (!result.success) {
-        throw new Error(result.error || '提取失败')
+        throw new Error(result.error || '生成文件失败')
       }
     }
     catch (error) {
-      console.error('提取过程出错:', error)
+      console.error('生成文件过程出错:', error)
       throw error
     }
     finally {
@@ -148,19 +151,20 @@ export function useDocumentAnalyzer() {
     }
   }
 
-  // 停止提取
-  const stopExtraction = () => {
+  // 停止操作
+  const stopOperation = () => {
+    isAnalyzing.value = false
     isExtracting.value = false
   }
 
   return {
     isAnalyzing: readonly(isAnalyzing),
     isExtracting: readonly(isExtracting),
-    currentStructure: readonly(currentStructure),
+    currentLinkData: readonly(currentLinkData),
     extractionProgress: readonly(extractionProgress),
     checkPageStructure,
-    analyzeStructure,
-    startExtraction,
-    stopExtraction,
+    extractPageLinks,
+    generateMarkdownFile,
+    stopOperation,
   }
 }

@@ -56,26 +56,29 @@ class DocumentAnalyzer {
     return textContent.length > 100 // 内容长度大于100字符
   }
 
-  // 分析文档结构
+  // 分析页面链接结构
   analyzeStructure(sidebarSelectors: string[], contentSelectors: string[]) {
     try {
       this.sidebarSelectors = sidebarSelectors
       this.contentSelectors = contentSelectors
 
       const sidebar = this.findSidebar()
-      if (!sidebar) {
-        return { success: false, error: '未找到侧边栏' }
-      }
+      const mainContent = this.findMainContent()
 
-      const structure = this.extractNavigationStructure(sidebar)
+      const sidebarLinks = sidebar ? this.extractLinksFromElement(sidebar, 'sidebar') : []
+      const contentLinks = mainContent ? this.extractLinksFromElement(mainContent, 'content') : []
 
       return {
         success: true,
         structure: {
           baseUrl: this.getBaseUrl(),
-          totalPages: structure.pages.length,
-          pages: structure.pages,
-          hierarchy: structure.hierarchy,
+          currentPage: {
+            title: document.title,
+            url: window.location.href,
+          },
+          sidebarLinks,
+          contentLinks,
+          totalLinks: sidebarLinks.length + contentLinks.length,
         },
       }
     }
@@ -85,40 +88,59 @@ class DocumentAnalyzer {
     }
   }
 
-  // 提取导航结构
-  private extractNavigationStructure(sidebar: Element) {
-    const pages: any[] = []
-    const hierarchy: any[] = []
+  // 从指定元素中提取链接
+  private extractLinksFromElement(element: Element, source: 'sidebar' | 'content') {
+    const links: any[] = []
+    const linkElements = element.querySelectorAll('a[href]')
 
-    // 查找所有链接
-    const links = sidebar.querySelectorAll('a[href]')
-
-    links.forEach((link, index) => {
+    linkElements.forEach((link, index) => {
       const href = link.getAttribute('href')
       const text = link.textContent?.trim()
 
       if (href && text && this.isValidDocumentLink(href)) {
         const absoluteUrl = this.resolveUrl(href)
-        const level = this.getHierarchyLevel(link)
+        const level = source === 'sidebar' ? this.getHierarchyLevel(link) : 0
 
-        const pageInfo = {
-          id: `page_${index}`,
+        const linkInfo = {
+          id: `${source}_link_${index}`,
           title: text,
           url: absoluteUrl,
+          source,
           level,
-          parent: this.findParentPage(link, pages),
+          description: this.getLinkDescription(link),
+          context: this.getLinkContext(link),
         }
 
-        pages.push(pageInfo)
-
-        // 构建层级结构
-        if (level === 0) {
-          hierarchy.push(pageInfo)
-        }
+        links.push(linkInfo)
       }
     })
 
-    return { pages, hierarchy }
+    return links
+  }
+
+  // 获取链接的描述信息
+  private getLinkDescription(linkElement: Element): string {
+    // 尝试从父元素或兄弟元素获取描述
+    const parent = linkElement.parentElement
+    if (parent) {
+      const description = parent.querySelector('.description, .summary, .excerpt')
+      if (description) {
+        return description.textContent?.trim() || ''
+      }
+    }
+    return ''
+  }
+
+  // 获取链接的上下文信息
+  private getLinkContext(linkElement: Element): string {
+    // 获取链接周围的文本内容作为上下文
+    const parent = linkElement.parentElement
+    if (parent) {
+      const context = parent.textContent?.trim() || ''
+      // 限制上下文长度
+      return context.length > 200 ? `${context.substring(0, 200)}...` : context
+    }
+    return ''
   }
 
   // 验证是否为有效的文档链接
@@ -156,74 +178,45 @@ class DocumentAnalyzer {
     return Math.max(0, level - 1)
   }
 
-  // 查找父级页面
-  private findParentPage(linkElement: Element, existingPages: any[]): string | null {
-    // 简化实现：根据DOM结构查找父级
-    let parent = linkElement.parentElement
-    while (parent) {
-      const parentLink = parent.querySelector('a[href]')
-      if (parentLink && parentLink !== linkElement) {
-        const parentHref = this.resolveUrl(parentLink.getAttribute('href') || '')
-        const parentPage = existingPages.find(page => page.url === parentHref)
-        if (parentPage) {
-          return parentPage.id
-        }
+  // 提取当前页面的链接信息
+  extractPageLinks(sidebarSelectors: string[], contentSelectors: string[]) {
+    try {
+      this.sidebarSelectors = sidebarSelectors
+      this.contentSelectors = contentSelectors
+
+      const sidebar = this.findSidebar()
+      const mainContent = this.findMainContent()
+
+      const sidebarLinks = sidebar ? this.extractLinksFromElement(sidebar, 'sidebar') : []
+      const contentLinks = mainContent ? this.extractLinksFromElement(mainContent, 'content') : []
+
+      return {
+        success: true,
+        data: {
+          currentPage: {
+            title: document.title,
+            url: window.location.href,
+            domain: window.location.hostname,
+          },
+          sidebarLinks,
+          contentLinks,
+          summary: {
+            totalLinks: sidebarLinks.length + contentLinks.length,
+            sidebarLinksCount: sidebarLinks.length,
+            contentLinksCount: contentLinks.length,
+          },
+        },
       }
-      parent = parent.parentElement
     }
-    return null
+    catch (error) {
+      console.error('提取链接失败:', error)
+      return { success: false, error: (error as Error).message }
+    }
   }
 
   // 获取基础URL
   private getBaseUrl(): string {
     return `${window.location.protocol}//${window.location.host}`
-  }
-
-  // 提取当前页面内容
-  extractContent(contentSelectors: string[]) {
-    this.contentSelectors = contentSelectors
-    const content = this.findMainContent()
-    if (!content) {
-      return { success: false, error: '未找到主要内容区域' }
-    }
-
-    // 清理内容
-    const cleanedContent = this.cleanContent(content.cloneNode(true) as Element)
-
-    return {
-      success: true,
-      content: {
-        html: cleanedContent.innerHTML,
-        text: cleanedContent.textContent,
-        title: document.title,
-        url: window.location.href,
-      },
-    }
-  }
-
-  // 清理内容
-  private cleanContent(element: Element): Element {
-    // 移除不需要的元素
-    const unwantedSelectors = [
-      '.advertisement',
-      '.ads',
-      '.social-share',
-      '.comments',
-      '.footer',
-      '.header',
-      '.navigation',
-      '.sidebar',
-      'script',
-      'style',
-      'noscript',
-    ]
-
-    unwantedSelectors.forEach((selector) => {
-      const elements = element.querySelectorAll(selector)
-      elements.forEach(el => el.remove())
-    })
-
-    return element
   }
 }
 
@@ -232,15 +225,27 @@ const analyzer = new DocumentAnalyzer()
 
 // 监听来自popup和background的消息
 onMessage('checkPageStructure', ({ data }) => {
-  return analyzer.checkPageStructure(data.sidebarSelectors, data.contentSelectors)
+  if (!data || typeof data !== 'object') {
+    return { success: false, error: '无效的数据' }
+  }
+  const { sidebarSelectors, contentSelectors } = data as any
+  return analyzer.checkPageStructure(sidebarSelectors, contentSelectors)
 })
 
 onMessage('analyzeStructure', ({ data }) => {
-  return analyzer.analyzeStructure(data.sidebarSelectors, data.contentSelectors)
+  if (!data || typeof data !== 'object') {
+    return { success: false, error: '无效的数据' }
+  }
+  const { sidebarSelectors, contentSelectors } = data as any
+  return analyzer.analyzeStructure(sidebarSelectors, contentSelectors)
 })
 
-onMessage('extractContent', ({ data }) => {
-  return analyzer.extractContent(data.contentSelectors)
+onMessage('extractPageLinks', ({ data }) => {
+  if (!data || typeof data !== 'object') {
+    return { success: false, error: '无效的数据' }
+  }
+  const { sidebarSelectors, contentSelectors } = data as any
+  return analyzer.extractPageLinks(sidebarSelectors, contentSelectors)
 })
 
 // Firefox `browser.tabs.executeScript()` requires scripts return a primitive value
