@@ -1,6 +1,6 @@
 # GetAllPages
 
-📖 [English](README_EN.md) | 📖 [中文](README.md)
+[English](README_EN.md) | [中文](README.md)
 
 > Not just a single webpage, but an intelligent collection of entire documentation directories!
 
@@ -17,17 +17,20 @@ GetAllPages is a powerful browser extension that captures the entire table of co
 ### Installation
 
 1. Clone the project locally:
+
 ```bash
 git clone https://github.com/your-username/GetAllPages.git
 cd GetAllPages
 ```
 
 2. Install dependencies:
+
 ```bash
 pnpm install
 ```
 
 3. Build the extension:
+
 ```bash
 pnpm build
 ```

@@ -1,6 +1,6 @@
 # GetAllPages
 
-📖 [English](README_EN.md) | 📖 [中文](README.md)
+[English](README_EN.md) | [中文](README.md)
 
 > 不仅仅是单个网页，而是整个文档目录的智能剪藏！
 
@@ -17,17 +17,20 @@ GetAllPages 是一个强大的浏览器插件，能够获取整个技术文档�
 ### 安装
 
 1. 克隆项目到本地：
+
 ```bash
 git clone https://github.com/your-username/GetAllPages.git
 cd GetAllPages
 ```
 
 2. 安装依赖：
+
 ```bash
 pnpm install
 ```
 
 3. 构建插件：
+
 ```bash
 pnpm build
 ```
