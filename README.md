@@ -100,8 +100,8 @@ src/
 
 目前已测试支持的网站类型：
 
-- ✅ Apple Developer Documentation
-- ✅ MDN Web Docs
-- ✅ Vue.js 官方文档
-- ✅ React 官方文档
-- ✅ 大部分基于侧边栏导航的技术文档站点
+- [] Apple Developer Documentation
+- [] MDN Web Docs
+- [] Vue.js 官方文档
+- [] React 官方文档
+- [] 大部分基于侧边栏导航的技术文档站点
