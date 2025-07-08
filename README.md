@@ -1,5 +1,7 @@
 # GetAllPages
 
+📖 [English](README_EN.md) | 📖 [中文](README.md)
+
 > 不仅仅是单个网页，而是整个文档目录的智能剪藏！
 
 GetAllPages 是一个强大的浏览器插件，能够获取整个技术文档的目录和所有内容，让你的AI助手有更多上下文背景！
