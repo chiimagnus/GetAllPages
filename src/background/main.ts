@@ -12,6 +12,21 @@ browser.runtime.onInstalled.addListener((): void => {
   console.log('GetAllPages Extension installed')
 })
 
+// 全局状态管理
+interface GlobalState {
+  isAnalyzing: boolean
+  isExtracting: boolean
+  currentLinkData: any | null
+  lastError: string | null
+}
+
+const globalState: GlobalState = {
+  isAnalyzing: false,
+  isExtracting: false,
+  currentLinkData: null,
+  lastError: null,
+}
+
 // 链接提取和Markdown生成服务
 class LinkExtractionService {
   private isProcessing = false
@@ -171,4 +186,38 @@ onMessage('generateMarkdownFile', async ({ data }) => {
   catch (error) {
     return { success: false, error: (error as Error).message }
   }
+})
+
+// 获取全局状态
+onMessage('getGlobalState', () => {
+  return {
+    success: true,
+    state: globalState,
+  }
+})
+
+// 更新分析状态
+onMessage('updateAnalyzingState', ({ data }) => {
+  const { isAnalyzing, linkData, error } = data as any
+  globalState.isAnalyzing = isAnalyzing
+  if (linkData) {
+    globalState.currentLinkData = linkData
+  }
+  if (error) {
+    globalState.lastError = error
+  }
+  return { success: true }
+})
+
+// 更新提取状态
+onMessage('updateExtractingState', ({ data }) => {
+  const { isExtracting } = data as any
+  globalState.isExtracting = isExtracting
+  return { success: true }
+})
+
+// 清除错误状态
+onMessage('clearError', () => {
+  globalState.lastError = null
+  return { success: true }
 })

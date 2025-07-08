@@ -39,7 +39,49 @@ export function useDocumentAnalyzer() {
   const isAnalyzing = ref(false)
   const isExtracting = ref(false)
   const currentLinkData = ref<LinkExtractionResult | null>(null)
-  const extractionProgress = ref({ current: 0, total: 0, currentPage: '' })
+  const lastError = ref<string | null>(null)
+
+  // 恢复全局状态
+  const restoreGlobalState = async () => {
+    try {
+      const result = await sendMessage('getGlobalState', {}, 'background') as any
+      if (result.success && result.state) {
+        isAnalyzing.value = result.state.isAnalyzing
+        isExtracting.value = result.state.isExtracting
+        currentLinkData.value = result.state.currentLinkData
+        lastError.value = result.state.lastError
+      }
+    }
+    catch (error) {
+      console.error('恢复全局状态失败:', error)
+    }
+  }
+
+  // 更新全局分析状态
+  const updateGlobalAnalyzingState = async (analyzing: boolean, linkData?: LinkExtractionResult | null, error?: string) => {
+    try {
+      await sendMessage('updateAnalyzingState', {
+        isAnalyzing: analyzing,
+        linkData,
+        error,
+      }, 'background')
+    }
+    catch (err) {
+      console.error('更新分析状态失败:', err)
+    }
+  }
+
+  // 更新全局提取状态
+  const updateGlobalExtractingState = async (extracting: boolean) => {
+    try {
+      await sendMessage('updateExtractingState', {
+        isExtracting: extracting,
+      }, 'background')
+    }
+    catch (err) {
+      console.error('更新提取状态失败:', err)
+    }
+  }
 
   // 常见的侧边栏选择器 - 按优先级排序，避免匹配到顶部导航
   const sidebarSelectors = [
@@ -141,35 +183,11 @@ export function useDocumentAnalyzer() {
     }
   }
 
-  // 使用滚动方式提取页面链接
-  const extractPageLinksWithScrolling = async (tabId: number): Promise<LinkExtractionResult | null> => {
-    isAnalyzing.value = true
-    try {
-      const result = await sendMessage('extractPageLinksWithScrolling', {
-        sidebarSelectors,
-        contentSelectors,
-      }, { context: 'content-script', tabId }) as any
-
-      if (result.success) {
-        currentLinkData.value = result.data
-        return result.data
-      }
-      else {
-        throw new Error(result.error || '滚动提取链接失败')
-      }
-    }
-    catch (error) {
-      console.error('滚动提取页面链接失败:', error)
-      throw error
-    }
-    finally {
-      isAnalyzing.value = false
-    }
-  }
-
   // 生成并下载Markdown文件
   const generateMarkdownFile = async (linkData: LinkExtractionResult) => {
     isExtracting.value = true
+    await updateGlobalExtractingState(true)
+
     try {
       const result = await sendMessage('generateMarkdownFile', {
         linkData: JSON.parse(JSON.stringify(linkData)),
@@ -185,20 +203,66 @@ export function useDocumentAnalyzer() {
     }
     finally {
       isExtracting.value = false
+      await updateGlobalExtractingState(false)
+    }
+  }
+
+  // 使用滚动方式提取页面链接并自动保存
+  const extractPageLinksWithScrolling = async (tabId: number): Promise<LinkExtractionResult | null> => {
+    isAnalyzing.value = true
+    await updateGlobalAnalyzingState(true)
+
+    try {
+      const result = await sendMessage('extractPageLinksWithScrolling', {
+        sidebarSelectors,
+        contentSelectors,
+      }, { context: 'content-script', tabId }) as any
+
+      if (result.success) {
+        currentLinkData.value = result.data
+        await updateGlobalAnalyzingState(false, result.data)
+
+        // 自动保存为markdown文件
+        try {
+          await generateMarkdownFile(result.data)
+        }
+        catch (saveError) {
+          console.error('自动保存失败:', saveError)
+          // 保存失败不影响分析结果
+        }
+
+        return result.data
+      }
+      else {
+        const errorMsg = result.error || '滚动提取链接失败'
+        await updateGlobalAnalyzingState(false, null, errorMsg)
+        throw new Error(errorMsg)
+      }
+    }
+    catch (error) {
+      console.error('滚动提取页面链接失败:', error)
+      await updateGlobalAnalyzingState(false, null, (error as Error).message)
+      throw error
+    }
+    finally {
+      isAnalyzing.value = false
     }
   }
 
   // 停止操作
-  const stopOperation = () => {
+  const stopOperation = async () => {
     isAnalyzing.value = false
     isExtracting.value = false
+    await updateGlobalAnalyzingState(false)
+    await updateGlobalExtractingState(false)
   }
 
   return {
     isAnalyzing: readonly(isAnalyzing),
     isExtracting: readonly(isExtracting),
     currentLinkData: readonly(currentLinkData),
-    extractionProgress: readonly(extractionProgress),
+    lastError: readonly(lastError),
+    restoreGlobalState,
     checkPageStructure,
     extractPageLinks,
     extractPageLinksWithScrolling,

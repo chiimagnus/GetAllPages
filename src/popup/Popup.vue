@@ -7,20 +7,34 @@ const {
   isAnalyzing,
   isExtracting,
   currentLinkData,
-  extractionProgress,
+  lastError,
+  restoreGlobalState,
   checkPageStructure,
   extractPageLinksWithScrolling,
-  generateMarkdownFile,
-  stopOperation,
 } = useDocumentAnalyzer()
 
 const currentTab = ref<browser.tabs.Tab | null>(null)
 const pageStatus = ref<'checking' | 'ready' | 'unsupported' | 'error'>('checking')
 const statusMessage = ref('正在检查页面...')
-const showProgress = ref(false)
 
 onMounted(async () => {
+  // 首先恢复全局状态
+  await restoreGlobalState()
+
   await checkCurrentPage()
+
+  // 如果有错误状态，显示错误信息
+  if (lastError.value) {
+    statusMessage.value = `❌ ${lastError.value}`
+  }
+  // 如果正在分析，显示分析状态
+  else if (isAnalyzing.value) {
+    statusMessage.value = '🔄 智能分析进行中...'
+  }
+  // 如果正在提取，显示提取状态
+  else if (isExtracting.value) {
+    statusMessage.value = '⏸️ 文件生成中...'
+  }
 
   // 监听来自background的消息
   onMessage('operationSuccess', ({ data }) => {
@@ -73,35 +87,12 @@ async function handleAnalyze() {
     const linkData = await extractPageLinksWithScrolling(currentTab.value.id)
     if (linkData) {
       const { totalLinks } = linkData.summary
-      statusMessage.value = `✅ 智能分析完成！发现 ${totalLinks} 个有效链接`
+      statusMessage.value = `✅ 分析完成！发现 ${totalLinks} 个链接并已自动保存为Markdown文件`
     }
   }
   catch {
     statusMessage.value = '❌ 分析失败，请重试'
   }
-}
-
-async function handleExtract() {
-  if (!currentTab.value?.id || !currentLinkData.value)
-    return
-
-  showProgress.value = true
-  try {
-    await generateMarkdownFile(currentLinkData.value)
-    statusMessage.value = '链接文件已生成并下载！'
-  }
-  catch {
-    statusMessage.value = '生成失败，请重试'
-  }
-  finally {
-    showProgress.value = false
-  }
-}
-
-function handleStop() {
-  stopOperation()
-  showProgress.value = false
-  statusMessage.value = '已停止操作'
 }
 
 function openOptionsPage() {
@@ -171,44 +162,12 @@ const statusClass = computed(() => {
         <span v-else>� 智能滚动分析页面链接</span>
       </button>
 
-      <!-- 生成文件按钮 -->
-      <button
-        class="w-full py-3 px-4 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        :disabled="!currentLinkData || isExtracting"
-        @click="handleExtract"
-      >
-        <span v-if="isExtracting">⏸️ 生成中...</span>
-        <span v-else>📄 生成Markdown文件</span>
-      </button>
-
-      <!-- 停止操作按钮 -->
-      <button
-        v-if="isExtracting"
-        class="w-full py-2 px-4 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors"
-        @click="handleStop"
-      >
-        ⏹️ 停止操作
-      </button>
-
       <button
         class="w-full py-2 px-4 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors"
         @click="openOptionsPage"
       >
         ⚙️ 设置选项
       </button>
-    </div>
-
-    <!-- Progress -->
-    <div v-if="showProgress" class="mb-4">
-      <div class="w-full bg-gray-200 rounded-full h-2 mb-2">
-        <div
-          class="bg-blue-600 h-2 rounded-full transition-all duration-300"
-          :style="{ width: `${(extractionProgress.current / extractionProgress.total) * 100}%` }"
-        />
-      </div>
-      <div class="text-xs text-gray-600 text-center">
-        正在处理: {{ extractionProgress.currentPage }} ({{ extractionProgress.current }}/{{ extractionProgress.total }})
-      </div>
     </div>
 
     <!-- Help Link -->
