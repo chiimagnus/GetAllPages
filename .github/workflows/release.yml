@@ -1,10 +1,10 @@
 name: Create Release and Package Extension
 
-# 推送到main分支时自动触发发布
+# 推送 tag 时触发发布
 on:
   push:
-    branches:
-      - main
+    tags:
+      - 'v*'
 
 jobs:
   build-and-release:
@@ -16,8 +16,6 @@ jobs:
       # 第一步：检出代码
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # 获取所有提交历史，以便 semantic-release 分析
 
       # 第二步：设置 Node.js 环境
       - name: Set up Node.js
@@ -42,10 +40,27 @@ jobs:
 
       # 第六步：打包扩展
       - name: Package extension
-        run: pnpm pack
+        run: pnpm pack:zip
 
-      # 第七步：使用 semantic-release 自动发布
-      - name: Release
+      # 第七步：创建 GitHub Release
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx semantic-release
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+
+      # 第八步：上传打包文件到 Release
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./extension.zip
+          asset_name: extension-${{ github.ref_name }}.zip
+          asset_content_type: application/zip
