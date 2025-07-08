@@ -45,9 +45,9 @@ export function useDocumentAnalyzer() {
   // 常见的侧边栏选择器 - 按优先级排序，避免匹配到顶部导航
   const sidebarSelectors = [
     // Apple Developer Documentation 特定选择器（优先级最高）
-    '.navigator-content',
-    '.hierarchy-item',
-    '.navigator',
+    '.navigator', // 最外层导航容器
+    '.navigator-content', // 导航内容
+    '.hierarchy-item', // 层级项目
     '.documentation-sidebar',
     '.doc-sidebar',
     '.sidebar-content',

@@ -77,8 +77,7 @@ async function checkCurrentPage() {
       statusMessage.value = '当前页面不支持解析'
     }
   }
-  catch (error) {
-    console.error('检查页面失败:', error)
+  catch {
     pageStatus.value = 'error'
     statusMessage.value = '检查页面失败'
   }
@@ -91,12 +90,12 @@ async function handleAnalyze() {
   try {
     const linkData = await extractPageLinks(currentTab.value.id)
     if (linkData) {
-      statusMessage.value = `发现 ${linkData.summary.totalLinks} 个链接 (侧边栏: ${linkData.summary.sidebarLinksCount}, 内容: ${linkData.summary.contentLinksCount})`
+      const { totalLinks } = linkData.summary
+      statusMessage.value = `✅ 分析完成！发现 ${totalLinks} 个有效链接`
     }
   }
-  catch (error) {
-    console.error('分析失败:', error)
-    statusMessage.value = '分析失败，请重试'
+  catch {
+    statusMessage.value = '❌ 分析失败，请重试'
   }
 }
 
@@ -108,8 +107,7 @@ async function handleStartSelection() {
     await startSelectionMode(currentTab.value.id)
     statusMessage.value = '请在页面上点击要分析的区域，选择后将自动开始分析'
   }
-  catch (error) {
-    console.error('启动选择模式失败:', error)
+  catch {
     statusMessage.value = '启动选择模式失败，请重试'
   }
 }
@@ -121,12 +119,12 @@ async function handleExtractFromSelected() {
   try {
     const linkData = await extractLinksFromSelected(currentTab.value.id)
     if (linkData) {
-      statusMessage.value = `从选择区域发现 ${linkData.summary.totalLinks} 个链接`
+      const { totalLinks, selectedAreasCount } = linkData.summary
+      statusMessage.value = `✅ 从 ${selectedAreasCount} 个选择区域发现 ${totalLinks} 个有效链接`
     }
   }
-  catch (error) {
-    console.error('提取失败:', error)
-    statusMessage.value = '提取失败，请重试'
+  catch {
+    statusMessage.value = '❌ 提取失败，请重试'
   }
 }
 
@@ -138,8 +136,7 @@ async function handleStopSelection() {
     await stopSelectionMode(currentTab.value.id)
     statusMessage.value = '选择模式已停止'
   }
-  catch (error) {
-    console.error('停止选择模式失败:', error)
+  catch {
     statusMessage.value = '停止选择模式失败'
   }
 }
@@ -153,8 +150,7 @@ async function handleExtract() {
     await generateMarkdownFile(currentLinkData.value)
     statusMessage.value = '链接文件已生成并下载！'
   }
-  catch (error) {
-    console.error('生成失败:', error)
+  catch {
     statusMessage.value = '生成失败，请重试'
   }
   finally {
@@ -208,6 +204,25 @@ const statusClass = computed(() => {
       :class="statusClass"
     >
       {{ statusMessage }}
+    </div>
+
+    <!-- Link Statistics -->
+    <div v-if="currentLinkData" class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+      <div class="text-blue-800 font-medium mb-2">
+        📊 链接统计
+      </div>
+      <div class="text-blue-600 text-sm space-y-1">
+        <div>总链接数: <span class="font-medium">{{ currentLinkData.summary.totalLinks }}</span></div>
+        <div v-if="currentLinkData.summary.sidebarLinksCount > 0">
+          侧边栏: <span class="font-medium">{{ currentLinkData.summary.sidebarLinksCount }}</span>
+        </div>
+        <div v-if="currentLinkData.summary.contentLinksCount > 0">
+          内容区: <span class="font-medium">{{ currentLinkData.summary.contentLinksCount }}</span>
+        </div>
+        <div class="text-xs text-blue-500 mt-2">
+          页面中带有 ✅ 标记的链接已被识别并将被提取
+        </div>
+      </div>
     </div>
 
     <!-- Actions -->

@@ -55,9 +55,17 @@ class DocumentAnalyzer {
   private isValidSidebar(element: Element): boolean {
     const links = element.querySelectorAll('a[href]')
 
-    // 对于Apple Developer Documentation，真正的侧边栏应该有更多链接
+    // 对于Apple Developer Documentation，采用更宽松的验证
     if (window.location.hostname.includes('apple.com')) {
-      return links.length >= 20 // Apple文档侧边栏通常有很多链接
+      console.log(`[GetAllPages] Apple文档侧边栏验证: ${element.className}, 链接数: ${links.length}`)
+
+      // 如果是.navigator容器，应该包含大量链接
+      if (element.classList.contains('navigator')) {
+        return links.length >= 50 // navigator容器应该有很多链接
+      }
+
+      // 其他Apple文档容器，较宽松的要求
+      return links.length >= 10
     }
 
     return links.length >= 5 // 其他网站至少5个链接
@@ -81,7 +89,7 @@ class DocumentAnalyzer {
   }
 
   // 分析页面链接结构
-  analyzeStructure(sidebarSelectors: string[], contentSelectors: string[]) {
+  async analyzeStructure(sidebarSelectors: string[], contentSelectors: string[]) {
     try {
       // 清除之前的提取标记
       this.clearExtractionIndicators()
@@ -92,8 +100,8 @@ class DocumentAnalyzer {
       const sidebar = this.findSidebar()
       const mainContent = this.findMainContent()
 
-      const sidebarLinks = sidebar ? this.extractLinksFromElement(sidebar, 'sidebar') : []
-      const contentLinks = mainContent ? this.extractLinksFromElement(mainContent, 'content') : []
+      const sidebarLinks = sidebar ? await this.extractLinksFromElement(sidebar, 'sidebar') : []
+      const contentLinks = mainContent ? await this.extractLinksFromElement(mainContent, 'content') : []
 
       return {
         success: true,
@@ -115,46 +123,120 @@ class DocumentAnalyzer {
     }
   }
 
-  // 从指定元素中提取链接
-  private extractLinksFromElement(element: Element, source: string) {
-    const links: any[] = []
-    const linkElements = element.querySelectorAll('a[href]')
+  // 从指定元素中提取链接 - 简化版本
+  private async extractLinksFromElement(element: Element, source: string) {
+    console.log(`[GetAllPages] 开始从 ${source} 提取链接...`)
 
+    // 等待动态内容加载
+    await this.waitForDynamicContent(element)
+
+    // 获取所有链接元素
+    const linkElements = element.querySelectorAll('a[href]')
     console.log(`[GetAllPages] 在 ${source} 中找到 ${linkElements.length} 个链接元素`)
 
-    linkElements.forEach((link, index) => {
+    const links: any[] = []
+    const processedUrls = new Map<string, number>() // URL -> 第一次出现的索引
+
+    // 遍历所有链接元素
+    for (let index = 0; index < linkElements.length; index++) {
+      const link = linkElements[index] as HTMLElement
       const href = link.getAttribute('href')
       const text = link.textContent?.trim()
 
-      console.log(`[GetAllPages] 检查链接 ${index + 1}: href="${href}", text="${text}"`)
+      // 基本验证
+      if (!href || !text) {
+        continue
+      }
 
-      if (href && text && this.isValidDocumentLink(href)) {
-        const absoluteUrl = this.resolveUrl(href)
-        const level = source === 'sidebar' ? this.getHierarchyLevel(link) : 0
+      // 解析为绝对URL
+      const absoluteUrl = this.resolveUrl(href)
+
+      // 简单的有效性检查
+      if (!this.isValidDocumentLink(href)) {
+        continue
+      }
+
+      // 检查是否重复
+      const isDuplicate = processedUrls.has(absoluteUrl)
+
+      if (!isDuplicate) {
+        // 第一次遇到这个URL，添加到结果中
+        processedUrls.set(absoluteUrl, index)
 
         const linkInfo = {
           id: `${source}_link_${index}`,
           title: text,
           url: absoluteUrl,
           source,
-          level,
+          level: source === 'sidebar' ? this.getHierarchyLevel(link) : 0,
           description: this.getLinkDescription(link),
           context: this.getLinkContext(link),
         }
 
         links.push(linkInfo)
-        console.log(`[GetAllPages] 添加有效链接: ${text} -> ${absoluteUrl}`)
-
-        // 在链接旁边添加提取成功标记
-        this.addExtractionIndicator(link as HTMLElement)
+        console.log(`[GetAllPages] [${links.length}] 添加链接: ${text.substring(0, 50)}... -> ${absoluteUrl}`)
       }
-      else {
-        console.log(`[GetAllPages] 跳过无效链接: href="${href}", text="${text}", valid=${this.isValidDocumentLink(href || '')}`)
-      }
-    })
 
-    console.log(`[GetAllPages] ${source} 最终提取到 ${links.length} 个有效链接`)
+      // 无论是否重复，都添加✅标记（因为它是有效链接）
+      this.addExtractionIndicator(link, isDuplicate)
+    }
+
+    // 输出统计信息
+    console.log(`[GetAllPages] ${source} 提取完成:`)
+    console.log(`  - 扫描链接: ${linkElements.length}`)
+    console.log(`  - 有效链接: ${links.length}`)
+    console.log(`  - 重复链接: ${linkElements.length - links.length}`)
+
     return links
+  }
+
+  // 等待动态内容加载 - 简化版本
+  private async waitForDynamicContent(element: Element): Promise<void> {
+    if (!window.location.hostname.includes('apple.com')) {
+      return
+    }
+
+    console.log('[GetAllPages] 触发Apple Developer Documentation动态内容加载...')
+
+    // 1. 尝试滚动主要的导航容器
+    const navContainers = [
+      element.querySelector('.navigator-content'),
+      element.querySelector('.hierarchy-item'),
+      element.querySelector('[class*="nav"]'),
+      element,
+    ].filter(Boolean)
+
+    for (const container of navContainers) {
+      if (container && container.scrollHeight > container.clientHeight) {
+        console.log(`[GetAllPages] 滚动容器以触发懒加载: ${container.className}`)
+
+        // 快速滚动到底部再回到顶部
+        container.scrollTop = container.scrollHeight
+        await new Promise(resolve => setTimeout(resolve, 100))
+        container.scrollTop = 0
+        await new Promise(resolve => setTimeout(resolve, 100))
+        break // 只处理第一个可滚动的容器
+      }
+    }
+
+    // 2. 尝试展开所有折叠的项目
+    const collapsedItems = element.querySelectorAll('[aria-expanded="false"], .collapsed, [class*="closed"]')
+    if (collapsedItems.length > 0) {
+      console.log(`[GetAllPages] 尝试展开 ${collapsedItems.length} 个折叠项`)
+      collapsedItems.forEach((item) => {
+        if (item instanceof HTMLElement) {
+          try {
+            item.click()
+          }
+          catch {
+            // 忽略点击错误
+          }
+        }
+      })
+      await new Promise(resolve => setTimeout(resolve, 300))
+    }
+
+    console.log('[GetAllPages] 动态内容加载完成')
   }
 
   // 获取链接的描述信息
@@ -182,50 +264,101 @@ class DocumentAnalyzer {
     return ''
   }
 
-  // 在链接旁边添加提取成功标记
-  private addExtractionIndicator(linkElement: HTMLElement) {
+  // 在链接文本前面添加提取成功标记
+  private addExtractionIndicator(linkElement: HTMLElement, isDuplicate: boolean = false) {
     // 避免重复添加标记
-    if (linkElement.querySelector('.getallpages-extracted-indicator')) {
+    if (linkElement.textContent?.includes('✅')) {
       return
     }
 
-    const indicator = document.createElement('span')
-    indicator.className = 'getallpages-extracted-indicator'
-    indicator.innerHTML = '✅'
-    indicator.style.cssText = `
-      margin-left: 4px;
-      font-size: 12px;
-      opacity: 0.8;
-      display: inline-block;
-      vertical-align: middle;
-      animation: getallpages-fade-in 0.3s ease-in;
-    `
+    // 保存原始文本内容
+    const originalText = linkElement.textContent?.trim() || ''
 
-    // 添加动画样式
+    // 确定要添加的标记
+    let indicator: string
+    let title: string
+
+    if (isDuplicate) {
+      indicator = '✅🔄 ' // 重复链接用不同的标记，注意后面有空格
+      title = '有效链接（重复）'
+    }
+    else {
+      indicator = '✅ ' // 注意后面有空格
+      title = '有效链接（已提取）'
+    }
+
+    // 直接修改链接的文本内容，将标记添加到前面
+    linkElement.textContent = indicator + originalText
+    linkElement.title = title
+
+    // 添加样式类用于标识
+    linkElement.classList.add('getallpages-extracted-link')
+
+    // 添加CSS样式（如果还没有添加）
     if (!document.getElementById('getallpages-indicator-style')) {
       const style = document.createElement('style')
       style.id = 'getallpages-indicator-style'
       style.textContent = `
-        @keyframes getallpages-fade-in {
-          from { opacity: 0; transform: scale(0.5); }
-          to { opacity: 0.8; transform: scale(1); }
-        }
-        .getallpages-extracted-indicator:hover {
-          opacity: 1;
-          transform: scale(1.1);
+        /* 为提取的链接添加样式 */
+        .getallpages-extracted-link {
+          position: relative;
+          background-color: rgba(34, 197, 94, 0.08) !important;
+          border-radius: 3px;
+          padding: 2px 4px;
           transition: all 0.2s ease;
+          border-left: 2px solid rgba(34, 197, 94, 0.3);
+        }
+
+        .getallpages-extracted-link:hover {
+          background-color: rgba(34, 197, 94, 0.12) !important;
+          border-left-color: rgba(34, 197, 94, 0.5);
+          transform: translateX(1px);
+        }
+
+        /* 确保✅标记不会被其他样式覆盖 */
+        .getallpages-extracted-link::before {
+          content: '';
+          display: inline;
+        }
+
+        /* 为Apple Developer Documentation特殊优化 */
+        .navigator-content .getallpages-extracted-link,
+        .hierarchy-item .getallpages-extracted-link {
+          margin: 1px 0;
+          display: inline-block;
+          width: auto;
+          max-width: 100%;
         }
       `
       document.head.appendChild(style)
     }
-
-    linkElement.appendChild(indicator)
   }
 
   // 清除所有提取标记
   private clearExtractionIndicators() {
-    const indicators = document.querySelectorAll('.getallpages-extracted-indicator')
-    indicators.forEach(indicator => indicator.remove())
+    // 清除带有标记类的链接
+    const extractedLinks = document.querySelectorAll('.getallpages-extracted-link')
+    extractedLinks.forEach((link) => {
+      // 移除标记类
+      link.classList.remove('getallpages-extracted-link')
+
+      // 恢复原始文本（移除✅标记）
+      const currentText = link.textContent || ''
+      if (currentText.includes('✅')) {
+        // 移除✅和🔄标记以及后面的空格
+        const cleanText = currentText.replace(/^✅🔄\s+|^✅\s+/, '')
+        link.textContent = cleanText
+      }
+
+      // 清除title属性
+      if (link.getAttribute('title')?.includes('有效链接')) {
+        link.removeAttribute('title')
+      }
+    })
+
+    // 也清除旧版本的indicator元素（向后兼容）
+    const oldIndicators = document.querySelectorAll('.getallpages-extracted-indicator')
+    oldIndicators.forEach(indicator => indicator.remove())
   }
 
   // 验证是否为有效的文档链接
@@ -245,19 +378,37 @@ class DocumentAnalyzer {
       return false
     }
 
-    // 对于Apple Developer Documentation，允许同域名下的所有链接
+    // 对于Apple Developer Documentation，采用更宽松的策略
     if (window.location.hostname.includes('apple.com')) {
-      // 允许相对链接和同域名链接
-      if (!href.startsWith('http') || href.includes('apple.com')) {
+      // 允许所有相对链接
+      if (!href.startsWith('http')) {
         return true
+      }
+      // 允许所有apple.com域名下的链接
+      if (href.includes('apple.com')) {
+        return true
+      }
+      // 排除明显的外部链接
+      if (href.startsWith('http') && !href.includes('apple.com')) {
+        return false
+      }
+      return true
+    }
+
+    // 对于其他网站，允许同域名链接和相对链接
+    if (href.startsWith('http')) {
+      // 检查是否为同域名
+      try {
+        const linkUrl = new URL(href)
+        const currentUrl = new URL(window.location.href)
+        return linkUrl.hostname === currentUrl.hostname
+      }
+      catch {
+        return false
       }
     }
 
-    // 对于其他网站，排除外部链接
-    if (href.startsWith('http') && !href.includes(window.location.hostname)) {
-      return false
-    }
-
+    // 相对链接默认认为是有效的
     return true
   }
 
@@ -444,7 +595,7 @@ class DocumentAnalyzer {
   }
 
   // 基于选择的元素提取链接
-  extractLinksFromSelectedElements() {
+  async extractLinksFromSelectedElements() {
     if (this.selectedElements.length === 0) {
       return {
         success: false,
@@ -458,10 +609,11 @@ class DocumentAnalyzer {
 
       const allLinks: any[] = []
 
-      this.selectedElements.forEach((element, index) => {
-        const links = this.extractLinksFromElement(element, `selected-${index}`)
+      for (let i = 0; i < this.selectedElements.length; i++) {
+        const element = this.selectedElements[i]
+        const links = await this.extractLinksFromElement(element, `selected-${i}`)
         allLinks.push(...links)
-      })
+      }
 
       return {
         success: true,
@@ -487,7 +639,7 @@ class DocumentAnalyzer {
   }
 
   // 提取当前页面的链接信息（保留原有功能）
-  extractPageLinks(sidebarSelectors: string[], contentSelectors: string[]) {
+  async extractPageLinks(sidebarSelectors: string[], contentSelectors: string[]) {
     try {
       // 清除之前的提取标记
       this.clearExtractionIndicators()
@@ -498,8 +650,8 @@ class DocumentAnalyzer {
       const sidebar = this.findSidebar()
       const mainContent = this.findMainContent()
 
-      const sidebarLinks = sidebar ? this.extractLinksFromElement(sidebar, 'sidebar') : []
-      const contentLinks = mainContent ? this.extractLinksFromElement(mainContent, 'content') : []
+      const sidebarLinks = sidebar ? await this.extractLinksFromElement(sidebar, 'sidebar') : []
+      const contentLinks = mainContent ? await this.extractLinksFromElement(mainContent, 'content') : []
 
       return {
         success: true,
@@ -543,20 +695,20 @@ onMessage('checkPageStructure', ({ data }) => {
   return analyzer.checkPageStructure(sidebarSelectors, contentSelectors)
 })
 
-onMessage('analyzeStructure', ({ data }) => {
+onMessage('analyzeStructure', async ({ data }) => {
   if (!data || typeof data !== 'object') {
     return { success: false, error: '无效的数据' }
   }
   const { sidebarSelectors, contentSelectors } = data as any
-  return analyzer.analyzeStructure(sidebarSelectors, contentSelectors)
+  return await analyzer.analyzeStructure(sidebarSelectors, contentSelectors)
 })
 
-onMessage('extractPageLinks', ({ data }) => {
+onMessage('extractPageLinks', async ({ data }) => {
   if (!data || typeof data !== 'object') {
     return { success: false, error: '无效的数据' }
   }
   const { sidebarSelectors, contentSelectors } = data as any
-  return analyzer.extractPageLinks(sidebarSelectors, contentSelectors)
+  return await analyzer.extractPageLinks(sidebarSelectors, contentSelectors)
 })
 
 onMessage('startSelectionMode', () => {
@@ -567,8 +719,8 @@ onMessage('stopSelectionMode', () => {
   return analyzer.stopSelectionMode()
 })
 
-onMessage('extractLinksFromSelected', () => {
-  return analyzer.extractLinksFromSelectedElements()
+onMessage('extractLinksFromSelected', async () => {
+  return await analyzer.extractLinksFromSelectedElements()
 })
 
 // Firefox `browser.tabs.executeScript()` requires scripts return a primitive value
