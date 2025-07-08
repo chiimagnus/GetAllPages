@@ -143,7 +143,7 @@ export function useDocumentAnalyzer() {
       const result = await sendMessage('checkPageStructure', {
         sidebarSelectors,
         contentSelectors,
-      }, { context: 'content-script', tabId }) as AnalysisResult
+      }, { context: 'content-script', tabId }) as unknown as AnalysisResult
       return result
     }
     catch (error) {
