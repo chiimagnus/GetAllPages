@@ -25,13 +25,20 @@
     "start:firefox": "web-ext run --source-dir ./extension --target=firefox-desktop",
     "clear": "rimraf --glob extension/dist extension/manifest.json extension.*",
     "lint": "eslint --cache .",
+    "lint:fix": "eslint --cache . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "test": "vitest test",
     "test:e2e": "playwright test",
+    "test:coverage": "vitest test --coverage",
+    "release": "npm run build && npm run pack",
     "postinstall": "simple-git-hooks",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@antfu/eslint-config": "^2.27.0",
+    "@commitlint/cli": "^18.4.3",
+    "@commitlint/config-conventional": "^18.4.3",
     "@ffflorian/jszip-cli": "^3.8.5",
     "@iconify/json": "^2.2.239",
     "@playwright/test": "^1.46.1",
@@ -70,7 +77,8 @@
     "webextension-polyfill": "^0.12.0"
   },
   "simple-git-hooks": {
-    "pre-commit": "pnpm lint-staged"
+    "pre-commit": "pnpm lint-staged",
+    "commit-msg": "npx commitlint --edit $1"
   },
   "lint-staged": {
     "*": "eslint --fix"

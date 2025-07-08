@@ -1,18 +1,50 @@
+# 系统文件
 .DS_Store
 .idea/
+Thumbs.db
+
+# 构建产物
 .vite-ssg-dist
 .vite-ssg-temp
 *.crx
-*.local
-*.log
-*.pem
 *.xpi
 *.zip
 dist
 dist-ssr
 extension/manifest.json
+extension/dist
+
+# 依赖和缓存
 node_modules
+.pnpm-store
+.eslintcache
+.tsbuildinfo
+
+# 日志文件
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# 环境变量和配置
+*.local
+*.env
+*.pem
+
+# 自动生成的文件
 src/auto-imports.d.ts
 src/components.d.ts
-.eslintcache
+
+# 测试覆盖率
+coverage/
+.nyc_output
+
+# 编辑器配置（可选，如果团队使用不同编辑器可以取消注释）
+# .vscode/
+# .idea/
+
+# 临时文件
+*.tmp
+*.temp
 pnpm-lock.yaml
