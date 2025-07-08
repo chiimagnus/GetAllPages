@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 import { onMessage, sendMessage } from 'webext-bridge/background'
 import type { Tabs } from 'webextension-polyfill'
 
@@ -8,7 +9,6 @@ if (import.meta.hot) {
 }
 
 browser.runtime.onInstalled.addListener((): void => {
-  // eslint-disable-next-line no-console
   console.log('GetAllPages Extension installed')
 })
 
@@ -42,6 +42,12 @@ class LinkExtractionService {
   // 从链接数据生成Markdown内容
   generateMarkdownFromLinks(linkData: any): string {
     const { currentPage, sidebarLinks, contentLinks, summary } = linkData
+
+    // 添加调试日志
+    console.log('[GetAllPages] 生成Markdown - 数据统计:')
+    console.log(`  - 侧边栏链接数组长度: ${sidebarLinks?.length || 0}`)
+    console.log(`  - 内容区链接数组长度: ${contentLinks?.length || 0}`)
+    console.log(`  - 统计信息: ${JSON.stringify(summary)}`)
 
     let markdown = `# ${currentPage.title}\n\n`
     markdown += `**页面URL:** ${currentPage.url}\n`
@@ -134,7 +140,6 @@ browser.tabs.onActivated.addListener(async ({ tabId }) => {
     return
   }
 
-  // eslint-disable-next-line no-console
   console.log('previous tab', tab)
   sendMessage('tab-prev', { title: tab.title || '' }, { context: 'content-script', tabId })
 })
