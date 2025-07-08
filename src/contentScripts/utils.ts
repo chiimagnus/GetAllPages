@@ -162,13 +162,10 @@ export function extractTextFromElement(element: HTMLElement): string | null {
   if (text && text.trim())
     return text.trim()
 
-  // 使用文本内容，但清理✅标记
+  // 使用文本内容
   text = element.textContent?.trim() || null
-  if (text) {
-    // 移除可能的提取标记
-    text = text.replace(/^✅🔄\s+|^✅\s+/, '')
-    if (text.length > 0)
-      return text
+  if (text && text.length > 0) {
+    return text
   }
 
   // 如果是图片链接，使用alt属性
