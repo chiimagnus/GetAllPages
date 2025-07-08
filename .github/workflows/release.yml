@@ -1,134 +1,51 @@
-name: Release
+name: Create Release and Package Extension
 
+# 推送到main分支时自动触发发布
 on:
   push:
-    tags:
-      - 'v*'
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Release version (e.g., v1.0.0)'
-        required: true
-        type: string
+    branches:
+      - main
 
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # 授予工作流写入仓库内容的权限，用于创建 Release
 
     steps:
-      - name: Checkout code
+      # 第一步：检出代码
+      - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 获取所有提交历史，以便 semantic-release 分析
 
-      - name: Setup Node.js
+      # 第二步：设置 Node.js 环境
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Setup pnpm
+      # 第三步：设置 pnpm 包管理器
+      - name: Set up pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 9.7.1
+          run_install: false
 
+      # 第四步：安装项目依赖
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run type checking
-        run: pnpm typecheck
-
-      - name: Run tests
-        run: pnpm test
-
+      # 第五步：构建扩展
       - name: Build extension
         run: pnpm build
 
-      - name: Get version from tag or input
-        id: version
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-          else
-            echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-          fi
-
+      # 第六步：打包扩展
       - name: Package extension
         run: pnpm pack
 
-      - name: Install changelog generator
-        run: npm install -g conventional-changelog-cli
-
-      - name: Update CHANGELOG.md
-        run: |
-          # 生成新的changelog条目
-          conventional-changelog -p angular -i CHANGELOG.md -s
-
-      - name: Commit updated changelog
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add CHANGELOG.md
-          git diff --staged --quiet || git commit -m "docs: update CHANGELOG.md for ${{ steps.version.outputs.version }}"
-          git push origin HEAD:main
-
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
+      # 第七步：使用 semantic-release 自动发布
+      - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ steps.version.outputs.version }}
-          release_name: GetAllPages ${{ steps.version.outputs.version }}
-          body: |
-            ## 🚀 GetAllPages ${{ steps.version.outputs.version }}
-
-            ### 📦 安装方式
-
-            1. 下载对应的扩展包：
-               - **Chrome/Edge**: 下载 `extension.zip` 文件
-               - **Firefox**: 下载 `extension.xpi` 文件
-
-            2. 在浏览器中安装：
-               - **Chrome/Edge**: 解压zip文件，在扩展管理页面选择"加载已解压的扩展程序"
-               - **Firefox**: 直接安装xpi文件
-
-            ### 🔧 使用方法
-
-            1. 访问目标文档网站
-            2. 点击插件图标
-            3. 点击"🔍 智能分析"按钮
-            4. 等待分析完成，自动下载markdown文件
-
-            ---
-
-            **完整更新日志请查看 [CHANGELOG.md](CHANGELOG.md)**
-          draft: false
-          prerelease: false
-
-      - name: Upload Chrome Extension (ZIP)
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./extension.zip
-          asset_name: extension.zip
-          asset_content_type: application/zip
-
-      - name: Upload Firefox Extension (XPI)
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./extension.xpi
-          asset_name: extension.xpi
-          asset_content_type: application/x-xpinstall
-
-      - name: Upload Chrome Extension (CRX)
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./extension.crx
-          asset_name: extension.crx
-          asset_content_type: application/x-chrome-extension
+        run: npx semantic-release
