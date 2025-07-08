@@ -14,17 +14,14 @@ import {
   isValidDocumentLink,
   resolveUrl,
 } from './utils'
-import { StyleManager } from './StyleManager'
 import { DOMObserver } from './DOMObserver'
 import { AppleDocsOptimizer } from './AppleDocsOptimizer'
 
 export class LinkExtractor {
-  private styleManager: StyleManager
   private domObserver: DOMObserver
   private appleOptimizer: AppleDocsOptimizer
 
   constructor() {
-    this.styleManager = StyleManager.getInstance()
     this.domObserver = new DOMObserver()
     this.appleOptimizer = new AppleDocsOptimizer()
   }
@@ -34,9 +31,6 @@ export class LinkExtractor {
    */
   async extractLinksFromElement(element: Element, source: string) {
     console.log(`[GetAllPages] 开始从 ${source} 提取链接...`)
-
-    // 清除之前的标记
-    this.styleManager.clearExtractionIndicators()
 
     // 快速动态内容加载（减少等待时间）
     await this.quickDynamicContentLoad(element)
@@ -128,9 +122,6 @@ export class LinkExtractor {
         newLinksCount++
         console.log(`[GetAllPages] [${links.length}] 新增链接: ${text.substring(0, 50)}... -> ${absoluteUrl}`)
       }
-
-      // 无论是否重复，都添加✅标记（因为它是有效链接）
-      this.styleManager.addExtractionIndicator(linkElement, isDuplicate)
     }
 
     // 输出详细统计信息
@@ -140,7 +131,6 @@ export class LinkExtractor {
     console.log(`  - 文本提取失败: ${textFailCount}`)
     console.log(`  - 验证失败: ${validationFailCount}`)
     console.log(`  - 有效链接: ${newLinksCount}`)
-    console.log(`  - 添加标记: ${processedCount - urlFailCount - textFailCount - validationFailCount}`)
 
     return newLinksCount
   }
@@ -244,12 +234,5 @@ export class LinkExtractor {
    */
   stopDOMObserver() {
     this.domObserver.stopDOMObserver()
-  }
-
-  /**
-   * 清除提取标记
-   */
-  clearExtractionIndicators() {
-    this.styleManager.clearExtractionIndicators()
   }
 }

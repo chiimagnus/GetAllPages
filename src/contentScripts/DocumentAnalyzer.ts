@@ -42,9 +42,6 @@ export class DocumentAnalyzer {
    */
   async analyzeStructure(sidebarSelectors: string[], contentSelectors: string[]) {
     try {
-      // 清除之前的提取标记
-      this.linkExtractor.clearExtractionIndicators()
-
       // 停止之前的DOM观察器
       this.linkExtractor.stopDOMObserver()
 
@@ -87,9 +84,6 @@ export class DocumentAnalyzer {
    */
   async extractPageLinks(sidebarSelectors: string[], contentSelectors: string[]) {
     try {
-      // 清除之前的提取标记
-      this.linkExtractor.clearExtractionIndicators()
-
       this.sidebarSelectors = sidebarSelectors
       this.contentSelectors = contentSelectors
 
@@ -151,9 +145,6 @@ export class DocumentAnalyzer {
     }
 
     try {
-      // 清除之前的提取标记
-      this.linkExtractor.clearExtractionIndicators()
-
       const allLinks: any[] = []
 
       for (let i = 0; i < selectedElements.length; i++) {

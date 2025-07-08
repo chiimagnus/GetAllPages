@@ -9,19 +9,16 @@
 export function isValidDocumentLink(href: string): boolean {
   // 排除明显无效的链接
   if (!href || href.trim() === '') {
-    console.log(`[GetAllPages] 链接验证失败: 空链接`)
     return false
   }
 
   // 只排除明显无用的链接类型
   if (href.startsWith('mailto:') || href.startsWith('tel:') || href.startsWith('javascript:')) {
-    console.log(`[GetAllPages] 链接验证失败: 特殊协议链接 - ${href}`)
     return false
   }
 
   // 排除纯锚点链接（但允许带路径的锚点）
   if (href === '#' || (href.startsWith('#') && href.length < 3)) {
-    console.log(`[GetAllPages] 链接验证失败: 纯锚点链接 - ${href}`)
     return false
   }
 
@@ -29,13 +26,11 @@ export function isValidDocumentLink(href: string): boolean {
   const resourceExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.svg', '.ico', '.css', '.js', '.woff', '.woff2', '.ttf']
   const lowerHref = href.toLowerCase()
   if (resourceExtensions.some(ext => lowerHref.endsWith(ext))) {
-    console.log(`[GetAllPages] 链接验证失败: 资源文件 - ${href}`)
     return false
   }
 
   // 对于Apple Developer Documentation，采用非常宽松的策略
   if (window.location.hostname.includes('apple.com')) {
-    console.log(`[GetAllPages] 链接验证通过: Apple文档链接 - ${href}`)
     return true // 几乎接受所有链接
   }
 
@@ -46,26 +41,16 @@ export function isValidDocumentLink(href: string): boolean {
       const linkUrl = new URL(href)
       const currentUrl = new URL(window.location.href)
       // 允许同域名和子域名
-      const isValid = linkUrl.hostname === currentUrl.hostname
+      return linkUrl.hostname === currentUrl.hostname
         || linkUrl.hostname.endsWith(`.${currentUrl.hostname}`)
         || currentUrl.hostname.endsWith(`.${linkUrl.hostname}`)
-
-      if (isValid) {
-        console.log(`[GetAllPages] 链接验证通过: 同域名链接 - ${href}`)
-      }
-      else {
-        console.log(`[GetAllPages] 链接验证失败: 跨域名链接 - ${href}`)
-      }
-      return isValid
     }
     catch {
-      console.log(`[GetAllPages] 链接验证失败: URL解析错误 - ${href}`)
       return false
     }
   }
 
   // 相对链接和锚点链接都认为是有效的
-  console.log(`[GetAllPages] 链接验证通过: 相对链接 - ${href}`)
   return true
 }
 
