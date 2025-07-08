@@ -7,13 +7,17 @@ const {
   isAnalyzing,
   isExtracting,
   isSelectionMode,
+  isScrollingExtracting,
   currentLinkData,
   extractionProgress,
+  scrollingProgress,
   checkPageStructure,
   extractPageLinks,
   extractLinksFromSelected,
+  extractLinksFromSelectedWithScrolling,
   startSelectionMode,
   stopSelectionMode,
+  stopScrollingExtraction,
   generateMarkdownFile,
   stopOperation,
 } = useDocumentAnalyzer()
@@ -45,8 +49,8 @@ onMounted(async () => {
       return
 
     if (event.data.type === 'GETALLPAGES_SELECTION_COMPLETE') {
-      // 用户选择完成，自动开始分析
-      handleExtractFromSelected()
+      // 用户选择完成，显示提取方式选择
+      statusMessage.value = '✅ 区域选择完成，请选择提取方式'
     }
     else if (event.data.type === 'GETALLPAGES_SELECTION_CANCELLED') {
       // 用户取消选择
@@ -125,6 +129,36 @@ async function handleExtractFromSelected() {
   }
   catch {
     statusMessage.value = '❌ 提取失败，请重试'
+  }
+}
+
+async function handleExtractFromSelectedWithScrolling() {
+  if (!currentTab.value?.id)
+    return
+
+  try {
+    statusMessage.value = '🔄 开始滚动提取链接...'
+    const linkData = await extractLinksFromSelectedWithScrolling(currentTab.value.id)
+    if (linkData) {
+      const { totalLinks, selectedAreasCount } = linkData.summary
+      statusMessage.value = `✅ 滚动提取完成！从 ${selectedAreasCount} 个选择区域发现 ${totalLinks} 个有效链接`
+    }
+  }
+  catch {
+    statusMessage.value = '❌ 滚动提取失败，请重试'
+  }
+}
+
+async function handleStopScrolling() {
+  if (!currentTab.value?.id)
+    return
+
+  try {
+    await stopScrollingExtraction(currentTab.value.id)
+    statusMessage.value = '滚动提取已停止'
+  }
+  catch {
+    statusMessage.value = '停止滚动提取失败'
   }
 }
 
@@ -253,10 +287,54 @@ const statusClass = computed(() => {
           🎯 选择模式已激活
         </div>
         <div class="text-purple-600 text-sm mb-3">
-          请在页面上点击要分析的区域，选择后将自动开始分析
+          请在页面上点击要分析的区域，选择后可以选择提取方式
         </div>
+
+        <!-- 提取方式选择 -->
+        <div class="space-y-2 mb-3">
+          <button
+            class="w-full py-2 px-4 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition-colors text-sm"
+            :disabled="isScrollingExtracting"
+            @click="handleExtractFromSelected"
+          >
+            ⚡ 快速提取
+          </button>
+          <button
+            class="w-full py-2 px-4 bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700 transition-colors text-sm"
+            :disabled="isScrollingExtracting"
+            @click="handleExtractFromSelectedWithScrolling"
+          >
+            <span v-if="isScrollingExtracting">🔄 滚动提取中...</span>
+            <span v-else>📜 滚动提取 (适用于懒加载页面)</span>
+          </button>
+        </div>
+
+        <!-- 滚动提取进度 -->
+        <div v-if="isScrollingExtracting" class="bg-orange-50 border border-orange-200 rounded-lg p-2 mb-3">
+          <div class="text-orange-800 text-xs font-medium mb-1">
+            滚动提取进度
+          </div>
+          <div class="w-full bg-orange-200 rounded-full h-1.5 mb-1">
+            <div
+              class="bg-orange-600 h-1.5 rounded-full transition-all duration-300"
+              :style="{ width: `${scrollingProgress.progressPercent}%` }"
+            />
+          </div>
+          <div class="text-orange-600 text-xs">
+            已提取: {{ scrollingProgress.extractedLinks }} 个链接
+            <span v-if="scrollingProgress.reachedBottom">- 已到达底部</span>
+          </div>
+          <button
+            class="w-full mt-2 py-1 px-3 bg-red-600 text-white rounded text-xs font-medium hover:bg-red-700 transition-colors"
+            @click="handleStopScrolling"
+          >
+            ⏹️ 停止滚动提取
+          </button>
+        </div>
+
         <button
           class="w-full py-2 px-4 bg-gray-600 text-white rounded-lg font-medium hover:bg-gray-700 transition-colors"
+          :disabled="isScrollingExtracting"
           @click="handleStopSelection"
         >
           ❌ 取消选择

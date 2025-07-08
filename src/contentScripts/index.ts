@@ -42,6 +42,23 @@ onMessage('extractLinksFromSelected', async () => {
   return await analyzer.extractLinksFromSelectedElements()
 })
 
+onMessage('extractLinksFromSelectedWithScrolling', async () => {
+  return await analyzer.extractLinksFromSelectedElementsWithScrolling()
+})
+
+onMessage('stopScrollingExtraction', () => {
+  analyzer.stopScrollingExtraction()
+  return { success: true }
+})
+
+// 处理来自background的标签页切换消息
+onMessage('tab-prev', ({ data }) => {
+  // 这个消息用于通知当前页面之前的标签页信息
+  // 目前我们只是记录日志，不需要特殊处理
+  console.log('[GetAllPages] Previous tab info:', data)
+  return { success: true }
+})
+
 // Firefox `browser.tabs.executeScript()` requires scripts return a primitive value
 ;(() => {
   console.info('[GetAllPages] Content script loaded')

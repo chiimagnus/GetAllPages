@@ -39,8 +39,16 @@ export function useDocumentAnalyzer() {
   const isAnalyzing = ref(false)
   const isExtracting = ref(false)
   const isSelectionMode = ref(false)
+  const isScrollingExtracting = ref(false)
   const currentLinkData = ref<LinkExtractionResult | null>(null)
   const extractionProgress = ref({ current: 0, total: 0, currentPage: '' })
+  const scrollingProgress = ref({
+    progressPercent: 0,
+    extractedLinks: 0,
+    currentArea: 0,
+    totalAreas: 0,
+    reachedBottom: false,
+  })
 
   // 常见的侧边栏选择器 - 按优先级排序，避免匹配到顶部导航
   const sidebarSelectors = [
@@ -226,24 +234,82 @@ export function useDocumentAnalyzer() {
     }
   }
 
+  // 使用滚动方式从选择的区域提取链接
+  const extractLinksFromSelectedWithScrolling = async (tabId: number): Promise<LinkExtractionResult | null> => {
+    isScrollingExtracting.value = true
+    scrollingProgress.value = {
+      progressPercent: 0,
+      extractedLinks: 0,
+      currentArea: 0,
+      totalAreas: 0,
+      reachedBottom: false,
+    }
+
+    try {
+      const result = await sendMessage('extractLinksFromSelectedWithScrolling', {}, { context: 'content-script', tabId }) as any
+
+      if (result.success) {
+        // 转换数据格式以匹配现有接口
+        const linkData: LinkExtractionResult = {
+          currentPage: result.data.currentPage,
+          sidebarLinks: [], // 选择模式下不区分sidebar和content
+          contentLinks: result.data.extractedLinks,
+          summary: {
+            totalLinks: result.data.summary.totalLinks,
+            sidebarLinksCount: 0,
+            contentLinksCount: result.data.summary.totalLinks,
+          },
+        }
+        currentLinkData.value = linkData
+        return linkData
+      }
+      else {
+        throw new Error(result.error || '滚动提取链接失败')
+      }
+    }
+    catch (error) {
+      console.error('滚动提取链接失败:', error)
+      throw error
+    }
+    finally {
+      isScrollingExtracting.value = false
+    }
+  }
+
+  // 停止滚动提取
+  const stopScrollingExtraction = async (tabId: number) => {
+    try {
+      await sendMessage('stopScrollingExtraction', {}, { context: 'content-script', tabId })
+      isScrollingExtracting.value = false
+    }
+    catch (error) {
+      console.error('停止滚动提取失败:', error)
+    }
+  }
+
   // 停止操作
   const stopOperation = () => {
     isAnalyzing.value = false
     isExtracting.value = false
     isSelectionMode.value = false
+    isScrollingExtracting.value = false
   }
 
   return {
     isAnalyzing: readonly(isAnalyzing),
     isExtracting: readonly(isExtracting),
     isSelectionMode: readonly(isSelectionMode),
+    isScrollingExtracting: readonly(isScrollingExtracting),
     currentLinkData: readonly(currentLinkData),
     extractionProgress: readonly(extractionProgress),
+    scrollingProgress: readonly(scrollingProgress),
     checkPageStructure,
     extractPageLinks,
     extractLinksFromSelected,
+    extractLinksFromSelectedWithScrolling,
     startSelectionMode,
     stopSelectionMode,
+    stopScrollingExtraction,
     generateMarkdownFile,
     stopOperation,
   }
