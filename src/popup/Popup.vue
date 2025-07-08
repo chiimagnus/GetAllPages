@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { onMessage } from 'webext-bridge/popup'
 import { useDocumentAnalyzer } from '~/composables/useDocumentAnalyzer'
 
 const {
@@ -20,6 +21,19 @@ const showProgress = ref(false)
 
 onMounted(async () => {
   await checkCurrentPage()
+
+  // 监听来自background的消息
+  onMessage('operationSuccess', ({ data }) => {
+    if (data && typeof data === 'object' && 'message' in data) {
+      statusMessage.value = data.message as string
+    }
+  })
+
+  onMessage('operationError', ({ data }) => {
+    if (data && typeof data === 'object' && 'message' in data) {
+      statusMessage.value = `错误: ${data.message}`
+    }
+  })
 })
 
 async function checkCurrentPage() {
@@ -92,7 +106,8 @@ function handleStop() {
 }
 
 function openOptionsPage() {
-  browser.runtime.openOptionsPage()
+  // 暂时禁用options页面，因为还没有创建
+  statusMessage.value = '设置功能即将推出'
 }
 
 function openHelp() {

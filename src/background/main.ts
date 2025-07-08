@@ -100,16 +100,14 @@ class LinkExtractionService {
 
   // 下载文件
   async downloadFile(content: string, filename: string, mimeType: string) {
-    const blob = new Blob([content], { type: mimeType })
-    const url = URL.createObjectURL(blob)
+    // 在background script中，我们需要使用data URL而不是blob URL
+    const dataUrl = `data:${mimeType};charset=utf-8,${encodeURIComponent(content)}`
 
     await browser.downloads.download({
-      url,
+      url: dataUrl,
       filename,
       saveAs: false,
     })
-
-    setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
 }
 
@@ -138,7 +136,7 @@ browser.tabs.onActivated.addListener(async ({ tabId }) => {
 
   // eslint-disable-next-line no-console
   console.log('previous tab', tab)
-  sendMessage('tab-prev', { title: tab.title }, { context: 'content-script', tabId })
+  sendMessage('tab-prev', { title: tab.title || '' }, { context: 'content-script', tabId })
 })
 
 onMessage('get-current-tab', async () => {
