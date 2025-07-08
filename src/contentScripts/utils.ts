@@ -4,55 +4,68 @@
  */
 
 /**
- * 验证是否为有效的文档链接
+ * 验证是否为有效的文档链接 - 优化版本（更宽松）
  */
 export function isValidDocumentLink(href: string): boolean {
   // 排除明显无效的链接
   if (!href || href.trim() === '') {
+    console.log(`[GetAllPages] 链接验证失败: 空链接`)
     return false
   }
 
-  // 排除锚点链接、邮件和电话链接
-  if (href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:')) {
+  // 只排除明显无用的链接类型
+  if (href.startsWith('mailto:') || href.startsWith('tel:') || href.startsWith('javascript:')) {
+    console.log(`[GetAllPages] 链接验证失败: 特殊协议链接 - ${href}`)
     return false
   }
 
-  // 排除JavaScript链接
-  if (href.startsWith('javascript:')) {
+  // 排除纯锚点链接（但允许带路径的锚点）
+  if (href === '#' || (href.startsWith('#') && href.length < 3)) {
+    console.log(`[GetAllPages] 链接验证失败: 纯锚点链接 - ${href}`)
     return false
   }
 
-  // 对于Apple Developer Documentation，采用更宽松的策略
+  // 排除明显的资源文件（但保留可能的文档文件）
+  const resourceExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.svg', '.ico', '.css', '.js', '.woff', '.woff2', '.ttf']
+  const lowerHref = href.toLowerCase()
+  if (resourceExtensions.some(ext => lowerHref.endsWith(ext))) {
+    console.log(`[GetAllPages] 链接验证失败: 资源文件 - ${href}`)
+    return false
+  }
+
+  // 对于Apple Developer Documentation，采用非常宽松的策略
   if (window.location.hostname.includes('apple.com')) {
-    // 允许所有相对链接
-    if (!href.startsWith('http')) {
-      return true
-    }
-    // 允许所有apple.com域名下的链接
-    if (href.includes('apple.com')) {
-      return true
-    }
-    // 排除明显的外部链接
-    if (href.startsWith('http') && !href.includes('apple.com')) {
-      return false
-    }
-    return true
+    console.log(`[GetAllPages] 链接验证通过: Apple文档链接 - ${href}`)
+    return true // 几乎接受所有链接
   }
 
-  // 对于其他网站，允许同域名链接和相对链接
+  // 对于其他网站，也采用宽松策略
   if (href.startsWith('http')) {
-    // 检查是否为同域名
+    // 检查是否为同域名或子域名
     try {
       const linkUrl = new URL(href)
       const currentUrl = new URL(window.location.href)
-      return linkUrl.hostname === currentUrl.hostname
+      // 允许同域名和子域名
+      const isValid = linkUrl.hostname === currentUrl.hostname
+        || linkUrl.hostname.endsWith(`.${currentUrl.hostname}`)
+        || currentUrl.hostname.endsWith(`.${linkUrl.hostname}`)
+
+      if (isValid) {
+        console.log(`[GetAllPages] 链接验证通过: 同域名链接 - ${href}`)
+      }
+      else {
+        console.log(`[GetAllPages] 链接验证失败: 跨域名链接 - ${href}`)
+      }
+      return isValid
     }
     catch {
+      console.log(`[GetAllPages] 链接验证失败: URL解析错误 - ${href}`)
       return false
     }
   }
 
-  // 相对链接默认认为是有效的
+  // 相对链接和锚点链接都认为是有效的
+  console.log(`[GetAllPages] 链接验证通过: 相对链接 - ${href}`)
   return true
 }
 
@@ -91,34 +104,60 @@ export function getHierarchyLevel(linkElement: Element): number {
 }
 
 /**
- * 从元素中提取URL
+ * 从元素中提取URL - 优化版本
  */
 export function extractUrlFromElement(element: HTMLElement): string | null {
-  // 标准href属性
+  // 1. 标准href属性（最常见）
   let url = element.getAttribute('href')
-  if (url)
-    return url
-
-  // 数据属性
-  const dataAttrs = ['data-href', 'data-url', 'data-link', 'data-src']
-  for (const attr of dataAttrs) {
-    url = element.getAttribute(attr)
-    if (url)
-      return url
+  if (url && url.trim()) {
+    return url.trim()
   }
 
-  // onclick事件中的URL
+  // 2. 检查是否是a标签但没有href（可能通过JS动态添加）
+  if (element.tagName === 'A') {
+    // 检查是否有文本内容看起来像URL
+    const text = element.textContent?.trim()
+    if (text && (text.startsWith('http') || text.startsWith('/') || text.includes('.'))) {
+      return text
+    }
+  }
+
+  // 3. 数据属性
+  const dataAttrs = ['data-href', 'data-url', 'data-link', 'data-src', 'data-target']
+  for (const attr of dataAttrs) {
+    url = element.getAttribute(attr)
+    if (url && url.trim()) {
+      return url.trim()
+    }
+  }
+
+  // 4. onclick事件中的URL
   const onclick = element.getAttribute('onclick')
   if (onclick) {
-    // 匹配location.href = 'url' 或 window.open('url') 等
-    const urlMatches = onclick.match(/(?:location\.href|window\.open|href)\s*=\s*['"`]([^'"`]+)['"`]/)
-    if (urlMatches)
-      return urlMatches[1]
+    // 匹配各种JavaScript跳转模式
+    const patterns = [
+      /(?:location\.href|window\.location)\s*=\s*['"`]([^'"`]+)['"`]/,
+      /window\.open\s*\(\s*['"`]([^'"`]+)['"`]/,
+      /href\s*=\s*['"`]([^'"`]+)['"`]/,
+      /['"`]((?:https?:)?\/\/[^'"`\s]+)['"`]/,
+      /['"`]([^'"`]+\.(?:html|htm|php|jsp|asp|aspx)[^'"`]*)['"`]/,
+    ]
 
-    // 匹配其他跳转模式
-    const jumpMatches = onclick.match(/['"`]([^'"`]+\.(?:html|php|jsp|asp)|[^"'/`]*\/[^"'`]*)['"`]/)
-    if (jumpMatches)
-      return jumpMatches[1]
+    for (const pattern of patterns) {
+      const match = onclick.match(pattern)
+      if (match && match[1]) {
+        return match[1].trim()
+      }
+    }
+  }
+
+  // 5. 检查父元素是否是链接
+  const parentLink = element.closest('a[href]')
+  if (parentLink) {
+    const parentHref = parentLink.getAttribute('href')
+    if (parentHref && parentHref.trim()) {
+      return parentHref.trim()
+    }
   }
 
   return null
@@ -199,31 +238,30 @@ export function getLinkContext(linkElement: Element): string {
 }
 
 /**
- * 查找所有类型的链接元素
+ * 查找所有类型的链接元素 - 优化版本
  */
 export function findAllLinkElements(element: Element): HTMLElement[] {
-  const selectors = [
-    'a[href]', // 标准链接
-    '[onclick*="location"]', // JavaScript跳转
-    '[onclick*="href"]', // JavaScript链接
+  // 优先使用最常见和最可靠的选择器
+  const primarySelectors = [
+    'a[href]', // 标准链接 - 最重要
+    'a', // 所有a标签（可能有href通过JS添加）
+  ]
+
+  // 次要选择器（可能包含链接的元素）
+  const secondarySelectors = [
     '[data-href]', // 数据链接
     '[data-url]', // 数据URL
-    '[data-link]', // 数据链接
-    'span[onclick]', // 可点击span
-    'div[onclick]', // 可点击div
-    'li[onclick]', // 可点击列表项
-    '.link', // 链接类
-    '.nav-link', // 导航链接类
     '[role="link"]', // ARIA链接
-    '[class*="link"]', // 包含link的类名
-    '[class*="nav"]', // 包含nav的类名
-    'button[onclick*="location"]', // 按钮跳转
+    '.nav-link', // 导航链接类
+    '[onclick*="location"]', // JavaScript跳转
+    '[onclick*="href"]', // JavaScript链接
   ]
 
   const allElements: HTMLElement[] = []
   const seenElements = new Set<HTMLElement>()
 
-  for (const selector of selectors) {
+  // 首先处理主要选择器
+  for (const selector of primarySelectors) {
     try {
       const elements = element.querySelectorAll(selector)
       for (const elem of Array.from(elements)) {
@@ -234,10 +272,27 @@ export function findAllLinkElements(element: Element): HTMLElement[] {
       }
     }
     catch (error) {
-      console.warn(`[GetAllPages] 选择器错误: ${selector}`, error)
+      console.warn(`[GetAllPages] 主选择器错误: ${selector}`, error)
     }
   }
 
+  // 然后处理次要选择器
+  for (const selector of secondarySelectors) {
+    try {
+      const elements = element.querySelectorAll(selector)
+      for (const elem of Array.from(elements)) {
+        if (elem instanceof HTMLElement && !seenElements.has(elem)) {
+          seenElements.add(elem)
+          allElements.push(elem)
+        }
+      }
+    }
+    catch (error) {
+      console.warn(`[GetAllPages] 次选择器错误: ${selector}`, error)
+    }
+  }
+
+  console.log(`[GetAllPages] 找到 ${allElements.length} 个潜在链接元素`)
   return allElements
 }
 

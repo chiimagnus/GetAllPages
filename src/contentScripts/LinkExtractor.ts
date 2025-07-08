@@ -30,7 +30,7 @@ export class LinkExtractor {
   }
 
   /**
-   * 从指定元素中提取链接 - 增强版本
+   * 从指定元素中提取链接 - 优化版本
    */
   async extractLinksFromElement(element: Element, source: string) {
     console.log(`[GetAllPages] 开始从 ${source} 提取链接...`)
@@ -38,53 +38,27 @@ export class LinkExtractor {
     // 清除之前的标记
     this.styleManager.clearExtractionIndicators()
 
-    // 等待动态内容加载
-    await this.waitForDynamicContent(element)
+    // 快速动态内容加载（减少等待时间）
+    await this.quickDynamicContentLoad(element)
 
-    // 多轮检测以捕获所有链接
+    // 单轮高效检测
     const links: any[] = []
     const processedUrls = new Map<string, number>()
-    let detectionRound = 0
-    let previousLinkCount = 0
 
-    while (detectionRound < 3) { // 最多进行3轮检测
-      detectionRound++
-      console.log(`[GetAllPages] 第${detectionRound}轮链接检测...`)
+    console.log(`[GetAllPages] 开始链接检测...`)
 
-      // 获取所有链接元素 - 使用更全面的选择器
-      const linkElements = findAllLinkElements(element)
-      const currentLinkCount = linkElements.length
+    // 获取所有链接元素 - 使用优化的选择器
+    const linkElements = findAllLinkElements(element)
+    console.log(`[GetAllPages] 发现 ${linkElements.length} 个链接元素`)
 
-      console.log(`[GetAllPages] 第${detectionRound}轮发现 ${currentLinkCount} 个链接元素 (上轮: ${previousLinkCount})`)
-
-      // 如果链接数量没有增长，停止检测
-      if (detectionRound > 1 && currentLinkCount <= previousLinkCount) {
-        console.log(`[GetAllPages] 链接数量稳定，停止检测`)
-        break
-      }
-
-      // 处理新发现的链接
-      const newLinksFound = await this.processLinkElements(linkElements, source, processedUrls, links)
-
-      if (newLinksFound === 0 && detectionRound > 1) {
-        console.log(`[GetAllPages] 没有发现新的有效链接，停止检测`)
-        break
-      }
-
-      previousLinkCount = currentLinkCount
-
-      // 如果不是最后一轮，等待一段时间再进行下一轮检测
-      if (detectionRound < 3) {
-        await new Promise(resolve => setTimeout(resolve, 500))
-      }
-    }
+    // 处理所有链接
+    const validLinksFound = await this.processLinkElements(linkElements, source, processedUrls, links)
 
     // 输出最终统计信息
     console.log(`[GetAllPages] ${source} 提取完成:`)
-    console.log(`  - 总检测轮数: ${detectionRound}`)
-    console.log(`  - 最终扫描链接: ${findAllLinkElements(element).length}`)
-    console.log(`  - 有效链接: ${links.length}`)
-    console.log(`  - 重复链接: ${processedUrls.size - links.length}`)
+    console.log(`  - 扫描链接: ${linkElements.length}`)
+    console.log(`  - 有效链接: ${validLinksFound}`)
+    console.log(`  - 重复链接: ${processedUrls.size - validLinksFound}`)
 
     return links
   }
@@ -99,25 +73,37 @@ export class LinkExtractor {
     links: any[],
   ): Promise<number> {
     let newLinksCount = 0
+    let processedCount = 0
+    let urlFailCount = 0
+    let textFailCount = 0
+    let validationFailCount = 0
+
+    console.log(`[GetAllPages] 开始处理 ${linkElements.length} 个链接元素...`)
 
     for (let index = 0; index < linkElements.length; index++) {
       const linkElement = linkElements[index]
+      processedCount++
 
       // 提取URL
       const url = extractUrlFromElement(linkElement)
-      if (!url)
+      if (!url) {
+        urlFailCount++
         continue
+      }
 
       // 获取链接文本
       const text = extractTextFromElement(linkElement)
-      if (!text)
+      if (!text) {
+        textFailCount++
         continue
+      }
 
       // 解析为绝对URL
       const absoluteUrl = resolveUrl(url)
 
       // 验证链接有效性
       if (!isValidDocumentLink(url)) {
+        validationFailCount++
         continue
       }
 
@@ -147,39 +133,110 @@ export class LinkExtractor {
       this.styleManager.addExtractionIndicator(linkElement, isDuplicate)
     }
 
+    // 输出详细统计信息
+    console.log(`[GetAllPages] 链接处理统计:`)
+    console.log(`  - 总处理: ${processedCount}`)
+    console.log(`  - URL提取失败: ${urlFailCount}`)
+    console.log(`  - 文本提取失败: ${textFailCount}`)
+    console.log(`  - 验证失败: ${validationFailCount}`)
+    console.log(`  - 有效链接: ${newLinksCount}`)
+    console.log(`  - 添加标记: ${processedCount - urlFailCount - textFailCount - validationFailCount}`)
+
     return newLinksCount
   }
 
   /**
-   * 等待动态内容加载 - 增强版本
+   * 快速动态内容加载 - 优化版本
    */
-  private async waitForDynamicContent(element: Element): Promise<void> {
-    console.log('[GetAllPages] 开始触发动态内容加载...')
+  private async quickDynamicContentLoad(element: Element): Promise<void> {
+    console.log('[GetAllPages] 开始快速动态内容加载...')
 
     // 记录初始链接数量
     const initialLinkCount = element.querySelectorAll('a[href]').length
     console.log(`[GetAllPages] 初始链接数量: ${initialLinkCount}`)
 
-    // 1. 启动DOM观察器
-    this.domObserver.startDOMObserver(element, (newLinks) => {
-      console.log(`[GetAllPages] DOM观察器发现 ${newLinks.length} 个新链接`)
-    })
+    // 1. 快速展开折叠项（减少等待时间）
+    await this.quickExpandCollapsedItems(element)
 
-    // 2. Apple文档专用优化（优先执行）
-    await this.appleOptimizer.optimizeForAppleDocs(element)
-
-    // 3. 等待DOM稳定
-    await this.domObserver.waitForDynamicContent(element)
-
-    // 4. 最后一次强化触发（针对顽固的懒加载）
+    // 2. 简化的Apple文档优化
     if (window.location.hostname.includes('apple.com')) {
-      console.log('[GetAllPages] 执行最后一轮Apple文档强化触发...')
-      await this.appleOptimizer.finalAppleTrigger(element)
+      await this.quickAppleOptimization(element)
     }
+
+    // 3. 快速滚动触发懒加载
+    await this.quickScrollTrigger(element)
+
+    // 4. 短暂等待DOM稳定
+    await new Promise(resolve => setTimeout(resolve, 1000))
 
     // 5. 记录最终链接数量
     const finalLinkCount = element.querySelectorAll('a[href]').length
-    console.log(`[GetAllPages] 动态加载完成，最终链接数量: ${finalLinkCount} (增加: ${finalLinkCount - initialLinkCount})`)
+    console.log(`[GetAllPages] 快速加载完成，最终链接数量: ${finalLinkCount} (增加: ${finalLinkCount - initialLinkCount})`)
+  }
+
+  /**
+   * 快速展开折叠项
+   */
+  private async quickExpandCollapsedItems(element: Element): Promise<void> {
+    const expandableItems = element.querySelectorAll('[aria-expanded="false"], .collapsed, details:not([open])')
+    console.log(`[GetAllPages] 快速展开 ${expandableItems.length} 个折叠项`)
+
+    for (const item of Array.from(expandableItems).slice(0, 50)) { // 限制数量，提高速度
+      try {
+        if (item instanceof HTMLElement) {
+          item.click()
+          if (item.tagName === 'DETAILS') {
+            (item as HTMLDetailsElement).open = true
+          }
+        }
+      }
+      catch {
+        // 忽略错误
+      }
+    }
+
+    // 短暂等待
+    await new Promise(resolve => setTimeout(resolve, 300))
+  }
+
+  /**
+   * 快速Apple文档优化
+   */
+  private async quickAppleOptimization(element: Element): Promise<void> {
+    console.log('[GetAllPages] 快速Apple文档优化...')
+
+    // 快速展开Apple导航器
+    const appleExpandable = element.querySelectorAll('.navigator-content [aria-expanded="false"], .hierarchy-item.closed')
+    for (const item of Array.from(appleExpandable).slice(0, 30)) { // 限制数量
+      try {
+        if (item instanceof HTMLElement) {
+          item.click()
+          await new Promise(resolve => setTimeout(resolve, 50))
+        }
+      }
+      catch {
+        // 忽略错误
+      }
+    }
+  }
+
+  /**
+   * 快速滚动触发
+   */
+  private async quickScrollTrigger(element: Element): Promise<void> {
+    console.log('[GetAllPages] 快速滚动触发...')
+
+    // 快速滚动主要容器
+    const scrollableContainers = [element, ...Array.from(element.querySelectorAll('.navigator-content, [class*="scroll"]'))]
+
+    for (const container of scrollableContainers.slice(0, 5)) { // 限制数量
+      if (container.scrollHeight > container.clientHeight) {
+        container.scrollTop = container.scrollHeight
+        await new Promise(resolve => setTimeout(resolve, 100))
+        container.scrollTop = 0
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
+    }
   }
 
   /**
