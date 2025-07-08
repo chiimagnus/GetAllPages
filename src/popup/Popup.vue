@@ -6,10 +6,14 @@ import { useDocumentAnalyzer } from '~/composables/useDocumentAnalyzer'
 const {
   isAnalyzing,
   isExtracting,
+  isSelectionMode,
   currentLinkData,
   extractionProgress,
   checkPageStructure,
   extractPageLinks,
+  extractLinksFromSelected,
+  startSelectionMode,
+  stopSelectionMode,
   generateMarkdownFile,
   stopOperation,
 } = useDocumentAnalyzer()
@@ -32,6 +36,21 @@ onMounted(async () => {
   onMessage('operationError', ({ data }) => {
     if (data && typeof data === 'object' && 'message' in data) {
       statusMessage.value = `错误: ${data.message}`
+    }
+  })
+
+  // 监听来自content script的页面消息
+  window.addEventListener('message', (event) => {
+    if (event.source !== window)
+      return
+
+    if (event.data.type === 'GETALLPAGES_SELECTION_COMPLETE') {
+      // 用户选择完成，自动开始分析
+      handleExtractFromSelected()
+    }
+    else if (event.data.type === 'GETALLPAGES_SELECTION_CANCELLED') {
+      // 用户取消选择
+      statusMessage.value = '已取消选择'
     }
   })
 })
@@ -81,6 +100,50 @@ async function handleAnalyze() {
   }
 }
 
+async function handleStartSelection() {
+  if (!currentTab.value?.id)
+    return
+
+  try {
+    await startSelectionMode(currentTab.value.id)
+    statusMessage.value = '请在页面上点击要分析的区域，选择后将自动开始分析'
+  }
+  catch (error) {
+    console.error('启动选择模式失败:', error)
+    statusMessage.value = '启动选择模式失败，请重试'
+  }
+}
+
+async function handleExtractFromSelected() {
+  if (!currentTab.value?.id)
+    return
+
+  try {
+    const linkData = await extractLinksFromSelected(currentTab.value.id)
+    if (linkData) {
+      statusMessage.value = `从选择区域发现 ${linkData.summary.totalLinks} 个链接`
+    }
+  }
+  catch (error) {
+    console.error('提取失败:', error)
+    statusMessage.value = '提取失败，请重试'
+  }
+}
+
+async function handleStopSelection() {
+  if (!currentTab.value?.id)
+    return
+
+  try {
+    await stopSelectionMode(currentTab.value.id)
+    statusMessage.value = '选择模式已停止'
+  }
+  catch (error) {
+    console.error('停止选择模式失败:', error)
+    statusMessage.value = '停止选择模式失败'
+  }
+}
+
 async function handleExtract() {
   if (!currentTab.value?.id || !currentLinkData.value)
     return
@@ -112,7 +175,7 @@ function openOptionsPage() {
 
 function openHelp() {
   browser.tabs.create({
-    url: 'https://github.com/your-username/GetAllPages#usage',
+    url: 'https://github.com/chiimagnus/GetAllPages',
   })
 }
 
@@ -149,25 +212,53 @@ const statusClass = computed(() => {
 
     <!-- Actions -->
     <div class="space-y-3 mb-5">
+      <!-- 自动分析按钮 -->
       <button
         class="w-full py-3 px-4 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        :disabled="pageStatus !== 'ready' || isAnalyzing"
+        :disabled="pageStatus !== 'ready' || isAnalyzing || isSelectionMode"
         @click="handleAnalyze"
       >
         <span v-if="isAnalyzing">🔄 分析中...</span>
-        <span v-else-if="currentLinkData">🔄 重新分析</span>
-        <span v-else>🔍 分析页面链接</span>
+        <span v-else>🔍 自动分析页面链接</span>
       </button>
 
+      <!-- 手动选择区域按钮 -->
+      <button
+        v-if="!isSelectionMode"
+        class="w-full py-3 px-4 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        :disabled="pageStatus !== 'ready' || isAnalyzing || isExtracting"
+        @click="handleStartSelection"
+      >
+        🎯 手动选择分析区域
+      </button>
+
+      <!-- 选择模式提示 -->
+      <div v-if="isSelectionMode" class="bg-purple-50 border border-purple-200 rounded-lg p-3">
+        <div class="text-purple-800 font-medium mb-2">
+          🎯 选择模式已激活
+        </div>
+        <div class="text-purple-600 text-sm mb-3">
+          请在页面上点击要分析的区域，选择后将自动开始分析
+        </div>
+        <button
+          class="w-full py-2 px-4 bg-gray-600 text-white rounded-lg font-medium hover:bg-gray-700 transition-colors"
+          @click="handleStopSelection"
+        >
+          ❌ 取消选择
+        </button>
+      </div>
+
+      <!-- 生成文件按钮 -->
       <button
         class="w-full py-3 px-4 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        :disabled="!currentLinkData || isExtracting"
+        :disabled="!currentLinkData || isExtracting || isSelectionMode"
         @click="handleExtract"
       >
         <span v-if="isExtracting">⏸️ 生成中...</span>
         <span v-else>📄 生成Markdown文件</span>
       </button>
 
+      <!-- 停止操作按钮 -->
       <button
         v-if="isExtracting"
         class="w-full py-2 px-4 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors"

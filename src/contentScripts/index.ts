@@ -5,6 +5,9 @@ import { onMessage } from 'webext-bridge/content-script'
 class DocumentAnalyzer {
   private sidebarSelectors: string[] = []
   private contentSelectors: string[] = []
+  private isSelectionMode = false
+  private selectedElements: Element[] = []
+  private highlightOverlay: HTMLDivElement | null = null
 
   // 检查页面是否支持解析
   checkPageStructure(sidebarSelectors: string[], contentSelectors: string[]) {
@@ -89,7 +92,7 @@ class DocumentAnalyzer {
   }
 
   // 从指定元素中提取链接
-  private extractLinksFromElement(element: Element, source: 'sidebar' | 'content') {
+  private extractLinksFromElement(element: Element, source: string) {
     const links: any[] = []
     const linkElements = element.querySelectorAll('a[href]')
 
@@ -178,7 +181,206 @@ class DocumentAnalyzer {
     return Math.max(0, level - 1)
   }
 
-  // 提取当前页面的链接信息
+  // 开始区域选择模式
+  startSelectionMode() {
+    this.isSelectionMode = true
+    this.selectedElements = []
+    this.createSelectionOverlay()
+    this.addSelectionListeners()
+
+    return {
+      success: true,
+      message: '请点击要分析的页面区域，选择后将自动开始分析',
+    }
+  }
+
+  // 停止区域选择模式
+  stopSelectionMode() {
+    this.isSelectionMode = false
+    this.removeSelectionListeners()
+    this.removeSelectionOverlay()
+
+    return {
+      success: true,
+      selectedCount: this.selectedElements.length,
+    }
+  }
+
+  // 创建选择覆盖层
+  private createSelectionOverlay() {
+    this.highlightOverlay = document.createElement('div')
+    this.highlightOverlay.id = 'getallpages-selection-overlay'
+    this.highlightOverlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 999999;
+    `
+    document.body.appendChild(this.highlightOverlay)
+  }
+
+  // 移除选择覆盖层
+  private removeSelectionOverlay() {
+    if (this.highlightOverlay) {
+      this.highlightOverlay.remove()
+      this.highlightOverlay = null
+    }
+    // 移除所有高亮
+    document.querySelectorAll('.getallpages-highlight').forEach((el) => {
+      el.classList.remove('getallpages-highlight')
+    })
+  }
+
+  // 添加选择事件监听器
+  private addSelectionListeners() {
+    document.addEventListener('mouseover', this.handleMouseOver)
+    document.addEventListener('click', this.handleClick)
+    document.addEventListener('keydown', this.handleKeyDown)
+
+    // 添加样式
+    const style = document.createElement('style')
+    style.id = 'getallpages-selection-style'
+    style.textContent = `
+      .getallpages-highlight {
+        outline: 3px solid #007bff !important;
+        background-color: rgba(0, 123, 255, 0.1) !important;
+        cursor: pointer !important;
+      }
+      .getallpages-selected {
+        outline: 3px solid #28a745 !important;
+        background-color: rgba(40, 167, 69, 0.2) !important;
+      }
+    `
+    document.head.appendChild(style)
+  }
+
+  // 移除选择事件监听器
+  private removeSelectionListeners() {
+    document.removeEventListener('mouseover', this.handleMouseOver)
+    document.removeEventListener('click', this.handleClick)
+    document.removeEventListener('keydown', this.handleKeyDown)
+
+    // 移除样式
+    const style = document.getElementById('getallpages-selection-style')
+    if (style) {
+      style.remove()
+    }
+  }
+
+  // 鼠标悬停处理
+  private handleMouseOver = (event: MouseEvent) => {
+    if (!this.isSelectionMode)
+      return
+
+    const target = event.target as Element
+    if (target && target !== document.body && target !== document.documentElement) {
+      // 移除之前的高亮
+      document.querySelectorAll('.getallpages-highlight').forEach((el) => {
+        if (!el.classList.contains('getallpages-selected')) {
+          el.classList.remove('getallpages-highlight')
+        }
+      })
+
+      // 添加当前高亮
+      if (!target.classList.contains('getallpages-selected')) {
+        target.classList.add('getallpages-highlight')
+      }
+    }
+  }
+
+  // 点击处理
+  private handleClick = (event: MouseEvent) => {
+    if (!this.isSelectionMode)
+      return
+
+    event.preventDefault()
+    event.stopPropagation()
+
+    const target = event.target as Element
+    if (target && target !== document.body && target !== document.documentElement) {
+      if (target.classList.contains('getallpages-selected')) {
+        // 取消选择
+        target.classList.remove('getallpages-selected')
+        this.selectedElements = this.selectedElements.filter(el => el !== target)
+      }
+      else {
+        // 添加选择并立即分析
+        target.classList.add('getallpages-selected')
+        target.classList.remove('getallpages-highlight')
+        this.selectedElements.push(target)
+
+        // 立即停止选择模式并通知popup分析
+        this.stopSelectionMode()
+
+        // 通知popup自动开始分析
+        setTimeout(() => {
+          window.postMessage({
+            type: 'GETALLPAGES_SELECTION_COMPLETE',
+            selectedCount: this.selectedElements.length,
+          }, '*')
+        }, 100)
+      }
+    }
+  }
+
+  // 键盘处理
+  private handleKeyDown = (event: KeyboardEvent) => {
+    if (!this.isSelectionMode)
+      return
+
+    if (event.key === 'Escape') {
+      this.stopSelectionMode()
+      // 通知popup取消选择
+      window.postMessage({
+        type: 'GETALLPAGES_SELECTION_CANCELLED',
+      }, '*')
+    }
+  }
+
+  // 基于选择的元素提取链接
+  extractLinksFromSelectedElements() {
+    if (this.selectedElements.length === 0) {
+      return {
+        success: false,
+        error: '请先选择要分析的页面区域',
+      }
+    }
+
+    try {
+      const allLinks: any[] = []
+
+      this.selectedElements.forEach((element, index) => {
+        const links = this.extractLinksFromElement(element, `selected-${index}`)
+        allLinks.push(...links)
+      })
+
+      return {
+        success: true,
+        data: {
+          currentPage: {
+            title: document.title,
+            url: window.location.href,
+            domain: window.location.hostname,
+          },
+          selectedAreas: this.selectedElements.length,
+          extractedLinks: allLinks,
+          summary: {
+            totalLinks: allLinks.length,
+            selectedAreasCount: this.selectedElements.length,
+          },
+        },
+      }
+    }
+    catch (error) {
+      console.error('提取链接失败:', error)
+      return { success: false, error: (error as Error).message }
+    }
+  }
+
+  // 提取当前页面的链接信息（保留原有功能）
   extractPageLinks(sidebarSelectors: string[], contentSelectors: string[]) {
     try {
       this.sidebarSelectors = sidebarSelectors
@@ -246,6 +448,18 @@ onMessage('extractPageLinks', ({ data }) => {
   }
   const { sidebarSelectors, contentSelectors } = data as any
   return analyzer.extractPageLinks(sidebarSelectors, contentSelectors)
+})
+
+onMessage('startSelectionMode', () => {
+  return analyzer.startSelectionMode()
+})
+
+onMessage('stopSelectionMode', () => {
+  return analyzer.stopSelectionMode()
+})
+
+onMessage('extractLinksFromSelected', () => {
+  return analyzer.extractLinksFromSelectedElements()
 })
 
 // Firefox `browser.tabs.executeScript()` requires scripts return a primitive value

@@ -38,6 +38,7 @@ export interface AnalysisResult {
 export function useDocumentAnalyzer() {
   const isAnalyzing = ref(false)
   const isExtracting = ref(false)
+  const isSelectionMode = ref(false)
   const currentLinkData = ref<LinkExtractionResult | null>(null)
   const extractionProgress = ref({ current: 0, total: 0, currentPage: '' })
 
@@ -151,19 +152,87 @@ export function useDocumentAnalyzer() {
     }
   }
 
+  // 开始区域选择模式
+  const startSelectionMode = async (tabId: number) => {
+    isSelectionMode.value = true
+    try {
+      const result = await sendMessage('startSelectionMode', {}, { context: 'content-script', tabId }) as any
+      return result
+    }
+    catch (error) {
+      console.error('启动选择模式失败:', error)
+      isSelectionMode.value = false
+      throw error
+    }
+  }
+
+  // 停止区域选择模式
+  const stopSelectionMode = async (tabId: number) => {
+    try {
+      const result = await sendMessage('stopSelectionMode', {}, { context: 'content-script', tabId }) as any
+      return result
+    }
+    catch (error) {
+      console.error('停止选择模式失败:', error)
+      throw error
+    }
+    finally {
+      isSelectionMode.value = false
+    }
+  }
+
+  // 从选择的区域提取链接
+  const extractLinksFromSelected = async (tabId: number): Promise<LinkExtractionResult | null> => {
+    isAnalyzing.value = true
+    try {
+      const result = await sendMessage('extractLinksFromSelected', {}, { context: 'content-script', tabId }) as any
+
+      if (result.success) {
+        // 转换数据格式以匹配现有接口
+        const linkData: LinkExtractionResult = {
+          currentPage: result.data.currentPage,
+          sidebarLinks: [], // 选择模式下不区分sidebar和content
+          contentLinks: result.data.extractedLinks,
+          summary: {
+            totalLinks: result.data.summary.totalLinks,
+            sidebarLinksCount: 0,
+            contentLinksCount: result.data.summary.totalLinks,
+          },
+        }
+        currentLinkData.value = linkData
+        return linkData
+      }
+      else {
+        throw new Error(result.error || '提取链接失败')
+      }
+    }
+    catch (error) {
+      console.error('从选择区域提取链接失败:', error)
+      throw error
+    }
+    finally {
+      isAnalyzing.value = false
+    }
+  }
+
   // 停止操作
   const stopOperation = () => {
     isAnalyzing.value = false
     isExtracting.value = false
+    isSelectionMode.value = false
   }
 
   return {
     isAnalyzing: readonly(isAnalyzing),
     isExtracting: readonly(isExtracting),
+    isSelectionMode: readonly(isSelectionMode),
     currentLinkData: readonly(currentLinkData),
     extractionProgress: readonly(extractionProgress),
     checkPageStructure,
     extractPageLinks,
+    extractLinksFromSelected,
+    startSelectionMode,
+    stopSelectionMode,
     generateMarkdownFile,
     stopOperation,
   }
