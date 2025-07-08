@@ -42,27 +42,38 @@ export function useDocumentAnalyzer() {
   const currentLinkData = ref<LinkExtractionResult | null>(null)
   const extractionProgress = ref({ current: 0, total: 0, currentPage: '' })
 
-  // 常见的侧边栏选择器
+  // 常见的侧边栏选择器 - 按优先级排序，避免匹配到顶部导航
   const sidebarSelectors = [
-    '[role="navigation"]',
-    '.sidebar',
-    '.nav-sidebar',
-    '.documentation-sidebar',
-    '.toc',
-    '.table-of-contents',
-    '#sidebar',
-    '.menu',
-    '.navigation',
-    // Apple Developer Documentation 特定选择器
+    // Apple Developer Documentation 特定选择器（优先级最高）
     '.navigator-content',
     '.hierarchy-item',
-    // 其他常见文档网站
+    '.navigator',
+    '.documentation-sidebar',
+    '.doc-sidebar',
+    '.sidebar-content',
+    '.navigation-sidebar',
+    '.left-nav',
+    '.left-sidebar',
     '.docs-sidebar',
     '.doc-nav',
     '.side-nav',
     '.doc-navigation',
     '.docs-nav',
-    '.documentation-nav',
+    // 通用侧边栏选择器
+    '.sidebar',
+    '.nav-sidebar',
+    '.toc',
+    '.table-of-contents',
+    '#sidebar',
+    '.menu:not(header .menu):not(nav .menu)', // 排除头部菜单
+    // 更通用的导航选择器（但排除顶部导航）
+    'aside[class*="nav"]',
+    'aside[class*="sidebar"]',
+    '[class*="navigation"]:not(header [class*="navigation"])',
+    '[class*="nav-menu"]:not(header [class*="nav-menu"])',
+    // 最后才考虑通用导航（可能匹配到顶部导航）
+    '.navigation:not(header .navigation)',
+    '[role="navigation"]:not(header [role="navigation"])',
   ]
 
   // 主要内容区域选择器

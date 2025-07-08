@@ -27,19 +27,40 @@ class DocumentAnalyzer {
 
   // 查找侧边栏元素
   private findSidebar(): Element | null {
+    console.log(`[GetAllPages] 开始查找侧边栏，共有 ${this.sidebarSelectors.length} 个选择器`)
+
     for (const selector of this.sidebarSelectors) {
       const element = document.querySelector(selector)
-      if (element && this.isValidSidebar(element)) {
-        return element
+      console.log(`[GetAllPages] 尝试选择器 "${selector}": ${element ? '找到元素' : '未找到'}`)
+
+      if (element) {
+        const linkCount = element.querySelectorAll('a[href]').length
+        console.log(`[GetAllPages] 元素包含 ${linkCount} 个链接`)
+
+        if (this.isValidSidebar(element)) {
+          console.log(`[GetAllPages] 找到有效侧边栏: ${selector}`)
+          return element
+        }
+        else {
+          console.log(`[GetAllPages] 侧边栏无效 (链接数量不足): ${selector}`)
+        }
       }
     }
+
+    console.log(`[GetAllPages] 未找到有效的侧边栏`)
     return null
   }
 
   // 验证侧边栏是否有效
   private isValidSidebar(element: Element): boolean {
     const links = element.querySelectorAll('a[href]')
-    return links.length >= 3 // 至少包含3个链接才认为是有效的侧边栏
+
+    // 对于Apple Developer Documentation，真正的侧边栏应该有更多链接
+    if (window.location.hostname.includes('apple.com')) {
+      return links.length >= 20 // Apple文档侧边栏通常有很多链接
+    }
+
+    return links.length >= 5 // 其他网站至少5个链接
   }
 
   // 查找主要内容区域
@@ -96,9 +117,13 @@ class DocumentAnalyzer {
     const links: any[] = []
     const linkElements = element.querySelectorAll('a[href]')
 
+    console.log(`[GetAllPages] 在 ${source} 中找到 ${linkElements.length} 个链接元素`)
+
     linkElements.forEach((link, index) => {
       const href = link.getAttribute('href')
       const text = link.textContent?.trim()
+
+      console.log(`[GetAllPages] 检查链接 ${index + 1}: href="${href}", text="${text}"`)
 
       if (href && text && this.isValidDocumentLink(href)) {
         const absoluteUrl = this.resolveUrl(href)
@@ -115,9 +140,14 @@ class DocumentAnalyzer {
         }
 
         links.push(linkInfo)
+        console.log(`[GetAllPages] 添加有效链接: ${text} -> ${absoluteUrl}`)
+      }
+      else {
+        console.log(`[GetAllPages] 跳过无效链接: href="${href}", text="${text}", valid=${this.isValidDocumentLink(href || '')}`)
       }
     })
 
+    console.log(`[GetAllPages] ${source} 最终提取到 ${links.length} 个有效链接`)
     return links
   }
 
@@ -148,13 +178,34 @@ class DocumentAnalyzer {
 
   // 验证是否为有效的文档链接
   private isValidDocumentLink(href: string): boolean {
-    // 排除外部链接、锚点链接等
-    if (href.startsWith('http') && !href.includes(window.location.hostname)) {
+    // 排除明显无效的链接
+    if (!href || href.trim() === '') {
       return false
     }
+
+    // 排除锚点链接、邮件和电话链接
     if (href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:')) {
       return false
     }
+
+    // 排除JavaScript链接
+    if (href.startsWith('javascript:')) {
+      return false
+    }
+
+    // 对于Apple Developer Documentation，允许同域名下的所有链接
+    if (window.location.hostname.includes('apple.com')) {
+      // 允许相对链接和同域名链接
+      if (!href.startsWith('http') || href.includes('apple.com')) {
+        return true
+      }
+    }
+
+    // 对于其他网站，排除外部链接
+    if (href.startsWith('http') && !href.includes(window.location.hostname)) {
+      return false
+    }
+
     return true
   }
 
