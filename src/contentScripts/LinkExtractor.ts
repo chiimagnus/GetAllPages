@@ -15,15 +15,12 @@ import {
   resolveUrl,
 } from './utils'
 import { DOMObserver } from './DOMObserver'
-import { AppleDocsOptimizer } from './AppleDocsOptimizer'
 
 export class LinkExtractor {
   private domObserver: DOMObserver
-  private appleOptimizer: AppleDocsOptimizer
 
   constructor() {
     this.domObserver = new DOMObserver()
-    this.appleOptimizer = new AppleDocsOptimizer()
   }
 
   /**

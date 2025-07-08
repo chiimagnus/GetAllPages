@@ -1,6 +1,6 @@
-/* eslint-disable no-console */
 import { onMessage, sendMessage } from 'webext-bridge/background'
 import type { Tabs } from 'webextension-polyfill'
+import browser from 'webextension-polyfill'
 
 // only on dev mode
 if (import.meta.hot) {
@@ -139,7 +139,7 @@ let previousTabId = 0
 
 // communication example: send previous tab title from background page
 // see shim.d.ts for type declaration
-browser.tabs.onActivated.addListener(async ({ tabId }) => {
+browser.tabs.onActivated.addListener(async ({ tabId }: { tabId: number }) => {
   if (!previousTabId) {
     previousTabId = tabId
     return
