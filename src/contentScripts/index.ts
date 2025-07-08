@@ -9,6 +9,11 @@ class DocumentAnalyzer {
   private selectedElements: Element[] = []
   private highlightOverlay: HTMLDivElement | null = null
 
+  // DOM观察器相关
+  private domObserver: MutationObserver | null = null
+  private observedElement: Element | null = null
+  private linkChangeCallbacks: ((newLinks: HTMLElement[]) => void)[] = []
+
   // 检查页面是否支持解析
   checkPageStructure(sidebarSelectors: string[], contentSelectors: string[]) {
     this.sidebarSelectors = sidebarSelectors
@@ -94,6 +99,9 @@ class DocumentAnalyzer {
       // 清除之前的提取标记
       this.clearExtractionIndicators()
 
+      // 停止之前的DOM观察器
+      this.stopDOMObserver()
+
       this.sidebarSelectors = sidebarSelectors
       this.contentSelectors = contentSelectors
 
@@ -102,6 +110,9 @@ class DocumentAnalyzer {
 
       const sidebarLinks = sidebar ? await this.extractLinksFromElement(sidebar, 'sidebar') : []
       const contentLinks = mainContent ? await this.extractLinksFromElement(mainContent, 'content') : []
+
+      // 分析完成后停止DOM观察器
+      this.stopDOMObserver()
 
       return {
         success: true,
@@ -119,40 +130,138 @@ class DocumentAnalyzer {
     }
     catch (error) {
       console.error('分析结构失败:', error)
+      // 确保在错误情况下也停止观察器
+      this.stopDOMObserver()
       return { success: false, error: (error as Error).message }
     }
   }
 
-  // 从指定元素中提取链接 - 简化版本
+  // 从指定元素中提取链接 - 增强版本
   private async extractLinksFromElement(element: Element, source: string) {
     console.log(`[GetAllPages] 开始从 ${source} 提取链接...`)
+
+    // 清除之前的标记
+    this.clearExtractionIndicators()
 
     // 等待动态内容加载
     await this.waitForDynamicContent(element)
 
-    // 获取所有链接元素
-    const linkElements = element.querySelectorAll('a[href]')
-    console.log(`[GetAllPages] 在 ${source} 中找到 ${linkElements.length} 个链接元素`)
-
+    // 多轮检测以捕获所有链接
     const links: any[] = []
-    const processedUrls = new Map<string, number>() // URL -> 第一次出现的索引
+    const processedUrls = new Map<string, number>()
+    let detectionRound = 0
+    let previousLinkCount = 0
 
-    // 遍历所有链接元素
-    for (let index = 0; index < linkElements.length; index++) {
-      const link = linkElements[index] as HTMLElement
-      const href = link.getAttribute('href')
-      const text = link.textContent?.trim()
+    while (detectionRound < 3) { // 最多进行3轮检测
+      detectionRound++
+      console.log(`[GetAllPages] 第${detectionRound}轮链接检测...`)
 
-      // 基本验证
-      if (!href || !text) {
-        continue
+      // 获取所有链接元素 - 使用更全面的选择器
+      const linkElements = this.findAllLinkElements(element)
+      const currentLinkCount = linkElements.length
+
+      console.log(`[GetAllPages] 第${detectionRound}轮发现 ${currentLinkCount} 个链接元素 (上轮: ${previousLinkCount})`)
+
+      // 如果链接数量没有增长，停止检测
+      if (detectionRound > 1 && currentLinkCount <= previousLinkCount) {
+        console.log(`[GetAllPages] 链接数量稳定，停止检测`)
+        break
       }
 
-      // 解析为绝对URL
-      const absoluteUrl = this.resolveUrl(href)
+      // 处理新发现的链接
+      const newLinksFound = await this.processLinkElements(linkElements, source, processedUrls, links)
 
-      // 简单的有效性检查
-      if (!this.isValidDocumentLink(href)) {
+      if (newLinksFound === 0 && detectionRound > 1) {
+        console.log(`[GetAllPages] 没有发现新的有效链接，停止检测`)
+        break
+      }
+
+      previousLinkCount = currentLinkCount
+
+      // 如果不是最后一轮，等待一段时间再进行下一轮检测
+      if (detectionRound < 3) {
+        await new Promise(resolve => setTimeout(resolve, 500))
+      }
+    }
+
+    // 输出最终统计信息
+    console.log(`[GetAllPages] ${source} 提取完成:`)
+    console.log(`  - 总检测轮数: ${detectionRound}`)
+    console.log(`  - 最终扫描链接: ${this.findAllLinkElements(element).length}`)
+    console.log(`  - 有效链接: ${links.length}`)
+    console.log(`  - 重复链接: ${processedUrls.size - links.length}`)
+
+    return links
+  }
+
+  // 查找所有类型的链接元素
+  private findAllLinkElements(element: Element): HTMLElement[] {
+    const selectors = [
+      'a[href]', // 标准链接
+      '[onclick*="location"]', // JavaScript跳转
+      '[onclick*="href"]', // JavaScript链接
+      '[data-href]', // 数据链接
+      '[data-url]', // 数据URL
+      '[data-link]', // 数据链接
+      'span[onclick]', // 可点击span
+      'div[onclick]', // 可点击div
+      'li[onclick]', // 可点击列表项
+      '.link', // 链接类
+      '.nav-link', // 导航链接类
+      '[role="link"]', // ARIA链接
+      '[class*="link"]', // 包含link的类名
+      '[class*="nav"]', // 包含nav的类名
+      'button[onclick*="location"]', // 按钮跳转
+    ]
+
+    const allElements: HTMLElement[] = []
+    const seenElements = new Set<HTMLElement>()
+
+    for (const selector of selectors) {
+      try {
+        const elements = element.querySelectorAll(selector)
+        for (const elem of Array.from(elements)) {
+          if (elem instanceof HTMLElement && !seenElements.has(elem)) {
+            seenElements.add(elem)
+            allElements.push(elem)
+          }
+        }
+      }
+      catch (error) {
+        console.warn(`[GetAllPages] 选择器错误: ${selector}`, error)
+      }
+    }
+
+    return allElements
+  }
+
+  // 处理链接元素并提取有效链接
+  private async processLinkElements(
+    linkElements: HTMLElement[],
+    source: string,
+    processedUrls: Map<string, number>,
+    links: any[],
+  ): Promise<number> {
+    let newLinksCount = 0
+
+    for (let index = 0; index < linkElements.length; index++) {
+      const linkElement = linkElements[index]
+
+      // 提取URL
+      const url = this.extractUrlFromElement(linkElement)
+      if (!url)
+        continue
+
+      // 获取链接文本
+      const text = this.extractTextFromElement(linkElement)
+      if (!text)
+        continue
+
+      // 解析为绝对URL
+      const absoluteUrl = this.resolveUrl(url)
+
+      // 验证链接有效性
+      if (!this.isValidDocumentLink(url)) {
         continue
       }
 
@@ -164,79 +273,355 @@ class DocumentAnalyzer {
         processedUrls.set(absoluteUrl, index)
 
         const linkInfo = {
-          id: `${source}_link_${index}`,
+          id: `${source}_link_${links.length}`,
           title: text,
           url: absoluteUrl,
           source,
-          level: source === 'sidebar' ? this.getHierarchyLevel(link) : 0,
-          description: this.getLinkDescription(link),
-          context: this.getLinkContext(link),
+          level: source === 'sidebar' ? this.getHierarchyLevel(linkElement) : 0,
+          description: this.getLinkDescription(linkElement),
+          context: this.getLinkContext(linkElement),
         }
 
         links.push(linkInfo)
-        console.log(`[GetAllPages] [${links.length}] 添加链接: ${text.substring(0, 50)}... -> ${absoluteUrl}`)
+        newLinksCount++
+        console.log(`[GetAllPages] [${links.length}] 新增链接: ${text.substring(0, 50)}... -> ${absoluteUrl}`)
       }
 
       // 无论是否重复，都添加✅标记（因为它是有效链接）
-      this.addExtractionIndicator(link, isDuplicate)
+      this.addExtractionIndicator(linkElement, isDuplicate)
     }
 
-    // 输出统计信息
-    console.log(`[GetAllPages] ${source} 提取完成:`)
-    console.log(`  - 扫描链接: ${linkElements.length}`)
-    console.log(`  - 有效链接: ${links.length}`)
-    console.log(`  - 重复链接: ${linkElements.length - links.length}`)
-
-    return links
+    return newLinksCount
   }
 
-  // 等待动态内容加载 - 简化版本
-  private async waitForDynamicContent(element: Element): Promise<void> {
-    if (!window.location.hostname.includes('apple.com')) {
-      return
+  // 从元素中提取URL
+  private extractUrlFromElement(element: HTMLElement): string | null {
+    // 标准href属性
+    let url = element.getAttribute('href')
+    if (url)
+      return url
+
+    // 数据属性
+    const dataAttrs = ['data-href', 'data-url', 'data-link', 'data-src']
+    for (const attr of dataAttrs) {
+      url = element.getAttribute(attr)
+      if (url)
+        return url
     }
 
-    console.log('[GetAllPages] 触发Apple Developer Documentation动态内容加载...')
+    // onclick事件中的URL
+    const onclick = element.getAttribute('onclick')
+    if (onclick) {
+      // 匹配location.href = 'url' 或 window.open('url') 等
+      const urlMatches = onclick.match(/(?:location\.href|window\.open|href)\s*=\s*['"`]([^'"`]+)['"`]/)
+      if (urlMatches)
+        return urlMatches[1]
 
-    // 1. 尝试滚动主要的导航容器
-    const navContainers = [
-      element.querySelector('.navigator-content'),
-      element.querySelector('.hierarchy-item'),
-      element.querySelector('[class*="nav"]'),
-      element,
-    ].filter(Boolean)
+      // 匹配其他跳转模式
+      const jumpMatches = onclick.match(/['"`]([^'"`]+\.(?:html|php|jsp|asp)|[^"'/`]*\/[^"'`]*)['"`]/)
+      if (jumpMatches)
+        return jumpMatches[1]
+    }
 
-    for (const container of navContainers) {
-      if (container && container.scrollHeight > container.clientHeight) {
-        console.log(`[GetAllPages] 滚动容器以触发懒加载: ${container.className}`)
+    return null
+  }
 
-        // 快速滚动到底部再回到顶部
-        container.scrollTop = container.scrollHeight
-        await new Promise(resolve => setTimeout(resolve, 100))
-        container.scrollTop = 0
-        await new Promise(resolve => setTimeout(resolve, 100))
-        break // 只处理第一个可滚动的容器
+  // 从元素中提取文本
+  private extractTextFromElement(element: HTMLElement): string | null {
+    // 优先使用aria-label
+    let text = element.getAttribute('aria-label')
+    if (text && text.trim())
+      return text.trim()
+
+    // 使用title属性
+    text = element.getAttribute('title')
+    if (text && text.trim())
+      return text.trim()
+
+    // 使用文本内容，但清理✅标记
+    text = element.textContent?.trim() || null
+    if (text) {
+      // 移除可能的提取标记
+      text = text.replace(/^✅🔄\s+|^✅\s+/, '')
+      if (text.length > 0)
+        return text
+    }
+
+    // 如果是图片链接，使用alt属性
+    const img = element.querySelector('img')
+    if (img) {
+      text = img.getAttribute('alt')
+      if (text && text.trim())
+        return text.trim()
+    }
+
+    // 如果包含图标，尝试获取相邻的文本
+    const iconElement = element.querySelector('i, .icon, svg')
+    if (iconElement) {
+      const parent = element.parentElement
+      if (parent) {
+        text = parent.textContent?.replace(element.textContent || '', '').trim() || null
+        if (text && text.length > 0)
+          return text
       }
     }
 
-    // 2. 尝试展开所有折叠的项目
-    const collapsedItems = element.querySelectorAll('[aria-expanded="false"], .collapsed, [class*="closed"]')
-    if (collapsedItems.length > 0) {
-      console.log(`[GetAllPages] 尝试展开 ${collapsedItems.length} 个折叠项`)
-      collapsedItems.forEach((item) => {
-        if (item instanceof HTMLElement) {
+    return null
+  }
+
+  // 等待动态内容加载 - 增强版本
+  private async waitForDynamicContent(element: Element): Promise<void> {
+    console.log('[GetAllPages] 开始触发动态内容加载...')
+
+    // 记录初始链接数量
+    const initialLinkCount = element.querySelectorAll('a[href]').length
+    console.log(`[GetAllPages] 初始链接数量: ${initialLinkCount}`)
+
+    // 1. 启动DOM观察器
+    this.startDOMObserver(element, (newLinks) => {
+      console.log(`[GetAllPages] DOM观察器发现 ${newLinks.length} 个新链接`)
+    })
+
+    // 2. Apple文档专用优化（优先执行）
+    await this.optimizeForAppleDocs(element)
+
+    // 3. 创建DOM变化监听器用于检测稳定性
+    let isLoadingComplete = false
+    let lastChangeTime = Date.now()
+    const stabilityObserver = new MutationObserver(() => {
+      lastChangeTime = Date.now()
+    })
+
+    stabilityObserver.observe(element, {
+      childList: true,
+      subtree: true,
+      attributes: false,
+    })
+
+    try {
+      // 4. 多轮滚动和交互触发
+      await this.triggerLazyLoading(element)
+
+      // 5. 等待DOM稳定 - 等待至少2秒内没有变化
+      const maxWaitTime = 15000 // 增加最大等待时间到15秒
+      const stableTime = 2000 // DOM稳定时间增加到2秒
+      const startTime = Date.now()
+
+      console.log('[GetAllPages] 等待DOM稳定...')
+
+      while (Date.now() - startTime < maxWaitTime && !isLoadingComplete) {
+        await new Promise(resolve => setTimeout(resolve, 300))
+
+        // 检查是否已经稳定
+        if (Date.now() - lastChangeTime > stableTime) {
+          isLoadingComplete = true
+          console.log('[GetAllPages] DOM已稳定')
+          break
+        }
+      }
+
+      // 6. 最后一次强化触发（针对顽固的懒加载）
+      if (window.location.hostname.includes('apple.com')) {
+        console.log('[GetAllPages] 执行最后一轮Apple文档强化触发...')
+        await this.finalAppleTrigger(element)
+      }
+
+      // 7. 记录最终链接数量
+      const finalLinkCount = element.querySelectorAll('a[href]').length
+      console.log(`[GetAllPages] 动态加载完成，最终链接数量: ${finalLinkCount} (增加: ${finalLinkCount - initialLinkCount})`)
+    }
+    finally {
+      stabilityObserver.disconnect()
+      // 保持DOM观察器继续运行，不在这里停止
+    }
+  }
+
+  // 最后一轮Apple文档强化触发
+  private async finalAppleTrigger(element: Element): Promise<void> {
+    // 1. 再次尝试滚动到所有可能的容器底部
+    const allScrollable = element.querySelectorAll('.navigator-content, .hierarchy-item, [class*="scroll"]')
+    for (const container of Array.from(allScrollable)) {
+      if (container.scrollHeight > container.clientHeight) {
+        container.scrollTop = container.scrollHeight
+        await new Promise(resolve => setTimeout(resolve, 200))
+        container.scrollTop = 0
+        await new Promise(resolve => setTimeout(resolve, 200))
+      }
+    }
+
+    // 2. 触发所有可能的展开操作
+    const expandTriggers = element.querySelectorAll('[aria-expanded="false"], .collapsed, .closed, .folded')
+    console.log(`[GetAllPages] 最后一轮展开 ${expandTriggers.length} 个项目`)
+
+    for (const trigger of Array.from(expandTriggers)) {
+      try {
+        if (trigger instanceof HTMLElement) {
+          trigger.click()
+          await new Promise(resolve => setTimeout(resolve, 100))
+        }
+      }
+      catch {
+        // 忽略错误
+      }
+    }
+
+    // 3. 等待最后的加载
+    await new Promise(resolve => setTimeout(resolve, 1000))
+  }
+
+  // 触发懒加载的具体策略
+  private async triggerLazyLoading(element: Element): Promise<void> {
+    console.log('[GetAllPages] 执行懒加载触发策略...')
+
+    // 策略1: 识别并滚动所有可滚动容器
+    const scrollableContainers = this.findScrollableContainers(element)
+    console.log(`[GetAllPages] 找到 ${scrollableContainers.length} 个可滚动容器`)
+
+    for (const container of scrollableContainers) {
+      await this.scrollContainerThoroughly(container)
+    }
+
+    // 策略2: 展开所有折叠项
+    await this.expandAllCollapsedItems(element)
+
+    // 策略3: 触发悬停事件（某些网站的懒加载需要）
+    await this.triggerHoverEvents(element)
+
+    // 策略4: 模拟用户滚动行为
+    await this.simulateUserScrolling(element)
+  }
+
+  // 查找所有可滚动容器
+  private findScrollableContainers(element: Element): Element[] {
+    const containers: Element[] = []
+
+    // 检查主元素本身
+    if (element.scrollHeight > element.clientHeight) {
+      containers.push(element)
+    }
+
+    // 查找子容器
+    const candidates = [
+      ...Array.from(element.querySelectorAll('.navigator-content, .hierarchy-item, [class*="nav"], [class*="scroll"], [class*="list"]')),
+      ...Array.from(element.querySelectorAll('div, ul, ol')).filter(el =>
+        el.scrollHeight > el.clientHeight && el.clientHeight > 50,
+      ),
+    ]
+
+    for (const candidate of candidates) {
+      if (candidate.scrollHeight > candidate.clientHeight) {
+        containers.push(candidate)
+      }
+    }
+
+    return containers
+  }
+
+  // 彻底滚动容器
+  private async scrollContainerThoroughly(container: Element): Promise<void> {
+    console.log(`[GetAllPages] 彻底滚动容器: ${container.className || 'unnamed'}`)
+
+    const scrollHeight = container.scrollHeight
+    const clientHeight = container.clientHeight
+    const steps = Math.max(5, Math.ceil(scrollHeight / clientHeight))
+
+    // 分步滚动到底部
+    for (let i = 0; i <= steps; i++) {
+      const scrollTop = (scrollHeight / steps) * i
+      container.scrollTop = scrollTop
+      await new Promise(resolve => setTimeout(resolve, 150))
+    }
+
+    // 回到顶部
+    container.scrollTop = 0
+    await new Promise(resolve => setTimeout(resolve, 200))
+  }
+
+  // 展开所有折叠项
+  private async expandAllCollapsedItems(element: Element): Promise<void> {
+    const selectors = [
+      '[aria-expanded="false"]',
+      '.collapsed',
+      '[class*="closed"]',
+      '[class*="fold"]',
+      'details:not([open])',
+      '.expandable:not(.expanded)',
+    ]
+
+    for (const selector of selectors) {
+      const items = element.querySelectorAll(selector)
+      if (items.length > 0) {
+        console.log(`[GetAllPages] 展开 ${items.length} 个 ${selector} 项`)
+
+        for (const item of Array.from(items)) {
           try {
-            item.click()
+            if (item instanceof HTMLElement) {
+              // 尝试点击展开
+              item.click()
+              await new Promise(resolve => setTimeout(resolve, 50))
+
+              // 如果是details元素，直接设置open属性
+              if (item.tagName === 'DETAILS') {
+                (item as HTMLDetailsElement).open = true
+              }
+            }
           }
           catch {
             // 忽略点击错误
           }
         }
-      })
-      await new Promise(resolve => setTimeout(resolve, 300))
-    }
 
-    console.log('[GetAllPages] 动态内容加载完成')
+        // 等待展开动画完成
+        await new Promise(resolve => setTimeout(resolve, 300))
+      }
+    }
+  }
+
+  // 触发悬停事件
+  private async triggerHoverEvents(element: Element): Promise<void> {
+    const hoverTargets = element.querySelectorAll('a, .nav-item, .menu-item, [class*="hover"]')
+
+    if (hoverTargets.length > 0) {
+      console.log(`[GetAllPages] 触发 ${Math.min(20, hoverTargets.length)} 个悬停事件`)
+
+      // 只触发前20个，避免过度延迟
+      for (let i = 0; i < Math.min(20, hoverTargets.length); i++) {
+        const target = hoverTargets[i]
+        try {
+          target.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }))
+          await new Promise(resolve => setTimeout(resolve, 50))
+          target.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }))
+        }
+        catch {
+          // 忽略事件错误
+        }
+      }
+    }
+  }
+
+  // 模拟用户滚动行为
+  private async simulateUserScrolling(_element: Element): Promise<void> {
+    console.log('[GetAllPages] 模拟用户滚动行为')
+
+    // 模拟页面级滚动
+    const originalScrollY = window.scrollY
+    const documentHeight = document.documentElement.scrollHeight
+    const viewportHeight = window.innerHeight
+
+    if (documentHeight > viewportHeight) {
+      // 缓慢滚动到页面底部
+      const scrollSteps = Math.min(10, Math.ceil(documentHeight / viewportHeight))
+
+      for (let i = 0; i <= scrollSteps; i++) {
+        const scrollY = (documentHeight / scrollSteps) * i
+        window.scrollTo(0, scrollY)
+        await new Promise(resolve => setTimeout(resolve, 200))
+      }
+
+      // 恢复原始滚动位置
+      window.scrollTo(0, originalScrollY)
+      await new Promise(resolve => setTimeout(resolve, 200))
+    }
   }
 
   // 获取链接的描述信息
@@ -264,49 +649,60 @@ class DocumentAnalyzer {
     return ''
   }
 
-  // 在链接文本前面添加提取成功标记
+  // 在链接前面添加固定的提取成功标记 - 使用CSS伪元素
   private addExtractionIndicator(linkElement: HTMLElement, isDuplicate: boolean = false) {
     // 避免重复添加标记
-    if (linkElement.textContent?.includes('✅')) {
+    if (linkElement.classList.contains('getallpages-extracted-link')) {
       return
     }
 
-    // 保存原始文本内容
-    const originalText = linkElement.textContent?.trim() || ''
-
-    // 确定要添加的标记
-    let indicator: string
-    let title: string
-
+    // 添加样式类用于标识
     if (isDuplicate) {
-      indicator = '✅🔄 ' // 重复链接用不同的标记，注意后面有空格
-      title = '有效链接（重复）'
+      linkElement.classList.add('getallpages-extracted-link', 'getallpages-duplicate-link')
+      linkElement.title = '有效链接（重复）'
     }
     else {
-      indicator = '✅ ' // 注意后面有空格
-      title = '有效链接（已提取）'
+      linkElement.classList.add('getallpages-extracted-link')
+      linkElement.title = '有效链接（已提取）'
     }
-
-    // 直接修改链接的文本内容，将标记添加到前面
-    linkElement.textContent = indicator + originalText
-    linkElement.title = title
-
-    // 添加样式类用于标识
-    linkElement.classList.add('getallpages-extracted-link')
 
     // 添加CSS样式（如果还没有添加）
     if (!document.getElementById('getallpages-indicator-style')) {
       const style = document.createElement('style')
       style.id = 'getallpages-indicator-style'
       style.textContent = `
-        /* 为提取的链接添加样式 */
+        /* 为提取的链接添加固定的✅标记 */
         .getallpages-extracted-link {
           position: relative;
           background-color: rgba(34, 197, 94, 0.08) !important;
           border-radius: 3px;
-          padding: 2px 4px;
+          padding: 2px 4px 2px 20px !important; /* 左侧留出空间给✅ */
           transition: all 0.2s ease;
           border-left: 2px solid rgba(34, 197, 94, 0.3);
+          display: inline-block !important;
+          margin-left: 4px; /* 给伪元素留出位置 */
+        }
+
+        /* 使用伪元素添加✅标记，固定在链接前面 */
+        .getallpages-extracted-link::before {
+          content: '✅';
+          position: absolute;
+          left: -18px;
+          top: 50%;
+          transform: translateY(-50%);
+          font-size: 12px;
+          line-height: 1;
+          z-index: 1000;
+          background: white;
+          padding: 1px 2px;
+          border-radius: 2px;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+
+        /* 重复链接使用不同的标记 */
+        .getallpages-duplicate-link::before {
+          content: '✅🔄';
+          left: -22px;
         }
 
         .getallpages-extracted-link:hover {
@@ -315,50 +711,92 @@ class DocumentAnalyzer {
           transform: translateX(1px);
         }
 
-        /* 确保✅标记不会被其他样式覆盖 */
-        .getallpages-extracted-link::before {
-          content: '';
-          display: inline;
+        .getallpages-extracted-link:hover::before {
+          background: rgba(34, 197, 94, 0.1);
         }
 
         /* 为Apple Developer Documentation特殊优化 */
         .navigator-content .getallpages-extracted-link,
         .hierarchy-item .getallpages-extracted-link {
-          margin: 1px 0;
-          display: inline-block;
+          margin: 1px 4px 1px 20px; /* 确保有足够的左边距 */
           width: auto;
-          max-width: 100%;
+          max-width: calc(100% - 24px); /* 减去标记的宽度 */
+        }
+
+        /* 确保在不同的容器中都能正确显示 */
+        .sidebar .getallpages-extracted-link,
+        .nav-sidebar .getallpages-extracted-link,
+        .toc .getallpages-extracted-link {
+          margin-left: 20px;
+        }
+
+        /* 处理嵌套链接的情况 */
+        .getallpages-extracted-link .getallpages-extracted-link::before {
+          display: none; /* 避免嵌套时重复显示标记 */
+        }
+
+        /* 确保标记在列表项中正确显示 */
+        li .getallpages-extracted-link::before {
+          left: -18px;
+          margin-left: 0;
+        }
+
+        /* 响应式设计 - 在小屏幕上调整 */
+        @media (max-width: 768px) {
+          .getallpages-extracted-link {
+            padding-left: 16px !important;
+          }
+          
+          .getallpages-extracted-link::before {
+            left: -14px;
+            font-size: 10px;
+          }
+          
+          .getallpages-duplicate-link::before {
+            left: -18px;
+          }
         }
       `
       document.head.appendChild(style)
     }
   }
 
-  // 清除所有提取标记
+  // 清除所有提取标记 - 更新为CSS类清理
   private clearExtractionIndicators() {
     // 清除带有标记类的链接
     const extractedLinks = document.querySelectorAll('.getallpages-extracted-link')
     extractedLinks.forEach((link) => {
-      // 移除标记类
-      link.classList.remove('getallpages-extracted-link')
+      // 移除所有相关的类
+      link.classList.remove('getallpages-extracted-link', 'getallpages-duplicate-link')
 
-      // 恢复原始文本（移除✅标记）
+      // 清除title属性
+      if (link.getAttribute('title')?.includes('有效链接')) {
+        link.removeAttribute('title')
+      }
+
+      // 移除可能的内联样式
+      if (link instanceof HTMLElement) {
+        link.style.removeProperty('margin-left')
+        link.style.removeProperty('padding-left')
+      }
+    })
+
+    // 清除旧版本的文本标记（向后兼容）
+    const linksWithTextIndicators = document.querySelectorAll('a[href]')
+    linksWithTextIndicators.forEach((link) => {
       const currentText = link.textContent || ''
       if (currentText.includes('✅')) {
         // 移除✅和🔄标记以及后面的空格
         const cleanText = currentText.replace(/^✅🔄\s+|^✅\s+/, '')
         link.textContent = cleanText
       }
-
-      // 清除title属性
-      if (link.getAttribute('title')?.includes('有效链接')) {
-        link.removeAttribute('title')
-      }
     })
 
     // 也清除旧版本的indicator元素（向后兼容）
     const oldIndicators = document.querySelectorAll('.getallpages-extracted-indicator')
     oldIndicators.forEach(indicator => indicator.remove())
+
+    console.log('[GetAllPages] 已清除所有提取标记')
   }
 
   // 验证是否为有效的文档链接
@@ -435,7 +873,7 @@ class DocumentAnalyzer {
     return Math.max(0, level - 1)
   }
 
-  // 开始区域选择模式
+  // 启动区域选择模式
   startSelectionMode() {
     this.isSelectionMode = true
     this.selectedElements = []
@@ -680,6 +1118,214 @@ class DocumentAnalyzer {
   // 获取基础URL
   private getBaseUrl(): string {
     return `${window.location.protocol}//${window.location.host}`
+  }
+
+  // 启动DOM变化监听
+  startDOMObserver(element: Element, onLinksChanged?: (newLinks: HTMLElement[]) => void) {
+    console.log('[GetAllPages] 启动DOM变化监听器...')
+
+    // 停止之前的观察器
+    this.stopDOMObserver()
+
+    this.observedElement = element
+
+    if (onLinksChanged) {
+      this.linkChangeCallbacks.push(onLinksChanged)
+    }
+
+    // 记录初始链接
+    let previousLinks = this.findAllLinkElements(element)
+
+    // 创建观察器
+    this.domObserver = new MutationObserver((mutations) => {
+      let hasStructuralChanges = false
+
+      for (const mutation of mutations) {
+        // 检查是否有新增的节点包含链接
+        if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+          for (const node of Array.from(mutation.addedNodes)) {
+            if (node instanceof Element) {
+              const nodeLinks = this.findAllLinkElements(node)
+              if (nodeLinks.length > 0) {
+                hasStructuralChanges = true
+                break
+              }
+            }
+          }
+        }
+
+        if (hasStructuralChanges)
+          break
+      }
+
+      // 如果检测到结构变化，重新检查链接
+      if (hasStructuralChanges) {
+        const currentLinks = this.findAllLinkElements(element)
+        const newLinksCount = currentLinks.length - previousLinks.length
+
+        if (newLinksCount > 0) {
+          console.log(`[GetAllPages] DOM变化检测到 ${newLinksCount} 个新链接`)
+
+          // 找出新增的链接
+          const newLinks = currentLinks.filter(link => !previousLinks.includes(link))
+
+          // 通知回调函数
+          this.linkChangeCallbacks.forEach((callback) => {
+            try {
+              callback(newLinks)
+            }
+            catch (error) {
+              console.warn('[GetAllPages] 链接变化回调执行失败:', error)
+            }
+          })
+
+          previousLinks = currentLinks
+        }
+      }
+    })
+
+    // 开始观察
+    this.domObserver.observe(element, {
+      childList: true,
+      subtree: true,
+      attributes: false, // 我们主要关心结构变化，不是属性变化
+    })
+
+    console.log('[GetAllPages] DOM观察器已启动')
+  }
+
+  // 停止DOM变化监听
+  stopDOMObserver() {
+    if (this.domObserver) {
+      this.domObserver.disconnect()
+      this.domObserver = null
+      this.observedElement = null
+      this.linkChangeCallbacks = []
+      console.log('[GetAllPages] DOM观察器已停止')
+    }
+  }
+
+  // 添加链接变化回调
+  addLinkChangeCallback(callback: (newLinks: HTMLElement[]) => void) {
+    this.linkChangeCallbacks.push(callback)
+  }
+
+  // Apple文档专用优化处理
+  private async optimizeForAppleDocs(element: Element): Promise<void> {
+    if (!window.location.hostname.includes('apple.com')) {
+      return
+    }
+
+    console.log('[GetAllPages] 开始Apple文档专用优化...')
+
+    // 1. 特殊处理navigator展开
+    await this.expandAppleNavigator(element)
+
+    // 2. 触发Apple特有的懒加载
+    await this.triggerAppleLazyLoad(element)
+
+    // 3. 处理Apple的动态路由加载
+    await this.handleAppleDynamicRoutes(element)
+
+    console.log('[GetAllPages] Apple文档优化完成')
+  }
+
+  // 展开Apple导航器
+  private async expandAppleNavigator(element: Element): Promise<void> {
+    console.log('[GetAllPages] 展开Apple导航器...')
+
+    // 查找所有可展开的导航项
+    const expandableSelectors = [
+      '.navigator-content [aria-expanded="false"]',
+      '.hierarchy-item.closed',
+      '.nav-tree-item.collapsed',
+      '.documentation-topic-section.collapsed',
+    ]
+
+    for (const selector of expandableSelectors) {
+      const items = element.querySelectorAll(selector)
+      console.log(`[GetAllPages] 找到 ${items.length} 个 ${selector} 项`)
+
+      for (const item of Array.from(items)) {
+        try {
+          if (item instanceof HTMLElement) {
+            // 点击展开按钮
+            const expandButton = item.querySelector('[aria-expanded="false"], .toggle, .expand-button')
+            if (expandButton instanceof HTMLElement) {
+              expandButton.click()
+            }
+            else {
+              // 直接点击项目本身
+              item.click()
+            }
+
+            // 等待展开动画
+            await new Promise(resolve => setTimeout(resolve, 200))
+          }
+        }
+        catch {
+          console.warn('[GetAllPages] 展开导航项失败')
+        }
+      }
+    }
+  }
+
+  // 触发Apple的懒加载机制
+  private async triggerAppleLazyLoad(element: Element): Promise<void> {
+    console.log('[GetAllPages] 触发Apple懒加载机制...')
+
+    // Apple文档可能使用IntersectionObserver进行懒加载
+    // 我们需要让所有元素都进入视图
+    const lazyElements = element.querySelectorAll('[data-lazy], [class*="lazy"], .not-loaded')
+
+    for (const lazyElement of Array.from(lazyElements)) {
+      try {
+        // 滚动到元素位置以触发IntersectionObserver
+        lazyElement.scrollIntoView({ behavior: 'instant', block: 'center' })
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
+      catch {
+        console.warn('[GetAllPages] 触发懒加载失败')
+      }
+    }
+
+    // 恢复到顶部
+    element.scrollTop = 0
+  }
+
+  // 处理Apple的动态路由加载
+  private async handleAppleDynamicRoutes(_element: Element): Promise<void> {
+    console.log('[GetAllPages] 处理Apple动态路由...')
+
+    // Apple文档可能通过Ajax加载内容
+    // 我们监听网络请求并等待加载完成
+
+    const initialLinkCount = _element.querySelectorAll('a[href]').length
+
+    // 触发可能的Ajax加载
+    const triggerElements = _element.querySelectorAll('[data-href], [onclick*="load"], [onclick*="fetch"]')
+
+    for (const trigger of Array.from(triggerElements)) {
+      try {
+        if (trigger instanceof HTMLElement) {
+          // 悬停触发
+          trigger.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }))
+          await new Promise(resolve => setTimeout(resolve, 300))
+          trigger.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }))
+        }
+      }
+      catch {
+        console.warn('[GetAllPages] 动态路由触发失败')
+      }
+    }
+
+    // 检查是否有新内容加载
+    await new Promise(resolve => setTimeout(resolve, 1000))
+    const finalLinkCount = _element.querySelectorAll('a[href]').length
+
+    if (finalLinkCount > initialLinkCount) {
+      console.log(`[GetAllPages] 动态路由加载了 ${finalLinkCount - initialLinkCount} 个新链接`)
+    }
   }
 }
 
