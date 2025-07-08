@@ -80,7 +80,7 @@ export class DocumentAnalyzer {
   }
 
   /**
-   * 提取当前页面的链接信息（保留原有功能）
+   * 提取当前页面的链接信息（仅侧边栏）
    */
   async extractPageLinks(sidebarSelectors: string[], contentSelectors: string[]) {
     try {
@@ -88,10 +88,11 @@ export class DocumentAnalyzer {
       this.contentSelectors = contentSelectors
 
       const sidebar = this.findSidebar()
-      const mainContent = this.findMainContent()
 
+      // 只提取侧边栏链接
       const sidebarLinks = sidebar ? await this.linkExtractor.extractLinksFromElement(sidebar, 'sidebar') : []
-      const contentLinks = mainContent ? await this.linkExtractor.extractLinksFromElement(mainContent, 'content') : []
+
+      console.log(`[DocumentAnalyzer] 快速提取完成，侧边栏链接: ${sidebarLinks.length} 个`)
 
       return {
         success: true,
@@ -102,11 +103,11 @@ export class DocumentAnalyzer {
             domain: window.location.hostname,
           },
           sidebarLinks,
-          contentLinks,
+          contentLinks: [], // 不再提取内容区链接
           summary: {
-            totalLinks: sidebarLinks.length + contentLinks.length,
+            totalLinks: sidebarLinks.length,
             sidebarLinksCount: sidebarLinks.length,
-            contentLinksCount: contentLinks.length,
+            contentLinksCount: 0,
           },
         },
       }
@@ -118,7 +119,7 @@ export class DocumentAnalyzer {
   }
 
   /**
-   * 使用滚动方式提取当前页面的链接信息
+   * 使用滚动方式提取当前页面的链接信息（仅侧边栏）
    */
   async extractPageLinksWithScrolling(sidebarSelectors: string[], contentSelectors: string[]) {
     try {
@@ -126,11 +127,11 @@ export class DocumentAnalyzer {
       this.contentSelectors = contentSelectors
 
       const sidebar = this.findSidebar()
-      const mainContent = this.findMainContent()
 
-      // 使用滚动提取器
+      // 只使用滚动提取器提取侧边栏链接
       const sidebarLinks = sidebar ? await this.scrollingExtractor.startScrollingExtraction(sidebar, 'sidebar') : []
-      const contentLinks = mainContent ? await this.scrollingExtractor.startScrollingExtraction(mainContent, 'content') : []
+
+      console.log(`[DocumentAnalyzer] 滚动提取完成，侧边栏链接: ${sidebarLinks.length} 个`)
 
       return {
         success: true,
@@ -141,11 +142,11 @@ export class DocumentAnalyzer {
             domain: window.location.hostname,
           },
           sidebarLinks,
-          contentLinks,
+          contentLinks: [], // 不再提取内容区链接
           summary: {
-            totalLinks: sidebarLinks.length + contentLinks.length,
+            totalLinks: sidebarLinks.length,
             sidebarLinksCount: sidebarLinks.length,
-            contentLinksCount: contentLinks.length,
+            contentLinksCount: 0,
           },
         },
       }

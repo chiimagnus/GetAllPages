@@ -152,15 +152,9 @@ const statusClass = computed(() => {
         📊 链接统计
       </div>
       <div class="text-blue-600 text-sm space-y-1">
-        <div>总链接数: <span class="font-medium">{{ currentLinkData.summary.totalLinks }}</span></div>
-        <div v-if="currentLinkData.summary.sidebarLinksCount > 0">
-          侧边栏: <span class="font-medium">{{ currentLinkData.summary.sidebarLinksCount }}</span>
-        </div>
-        <div v-if="currentLinkData.summary.contentLinksCount > 0">
-          内容区: <span class="font-medium">{{ currentLinkData.summary.contentLinksCount }}</span>
-        </div>
+        <div>侧边栏链接数: <span class="font-medium">{{ currentLinkData.summary.sidebarLinksCount }}</span></div>
         <div class="text-xs text-blue-500 mt-2">
-          页面中带有 ✅ 标记的链接已被识别并将被提取
+          专注提取侧边栏导航链接，确保高质量结果
         </div>
       </div>
     </div>
