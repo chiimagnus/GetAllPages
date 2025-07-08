@@ -6,19 +6,16 @@
 
 import { getBaseUrl, isValidContent, isValidSidebar } from './utils'
 import { LinkExtractor } from './LinkExtractor'
-import { ElementSelector } from './ElementSelector'
-import { ScrollingLinkExtractor, type ScrollingProgress } from './ScrollingLinkExtractor'
+import { ScrollingLinkExtractor } from './ScrollingLinkExtractor'
 
 export class DocumentAnalyzer {
   private sidebarSelectors: string[] = []
   private contentSelectors: string[] = []
   private linkExtractor: LinkExtractor
-  private elementSelector: ElementSelector
   private scrollingExtractor: ScrollingLinkExtractor
 
   constructor() {
     this.linkExtractor = new LinkExtractor()
-    this.elementSelector = new ElementSelector()
     this.scrollingExtractor = new ScrollingLinkExtractor()
   }
 
@@ -121,40 +118,19 @@ export class DocumentAnalyzer {
   }
 
   /**
-   * 启动区域选择模式
+   * 使用滚动方式提取当前页面的链接信息
    */
-  startSelectionMode() {
-    return this.elementSelector.startSelectionMode()
-  }
-
-  /**
-   * 停止区域选择模式
-   */
-  stopSelectionMode() {
-    return this.elementSelector.stopSelectionMode()
-  }
-
-  /**
-   * 基于选择的元素提取链接
-   */
-  async extractLinksFromSelectedElements() {
-    const selectedElements = this.elementSelector.getSelectedElements()
-
-    if (selectedElements.length === 0) {
-      return {
-        success: false,
-        error: '请先选择要分析的页面区域',
-      }
-    }
-
+  async extractPageLinksWithScrolling(sidebarSelectors: string[], contentSelectors: string[]) {
     try {
-      const allLinks: any[] = []
+      this.sidebarSelectors = sidebarSelectors
+      this.contentSelectors = contentSelectors
 
-      for (let i = 0; i < selectedElements.length; i++) {
-        const element = selectedElements[i]
-        const links = await this.linkExtractor.extractLinksFromElement(element, `selected-${i}`)
-        allLinks.push(...links)
-      }
+      const sidebar = this.findSidebar()
+      const mainContent = this.findMainContent()
+
+      // 使用滚动提取器
+      const sidebarLinks = sidebar ? await this.scrollingExtractor.startScrollingExtraction(sidebar, 'sidebar') : []
+      const contentLinks = mainContent ? await this.scrollingExtractor.startScrollingExtraction(mainContent, 'content') : []
 
       return {
         success: true,
@@ -164,76 +140,12 @@ export class DocumentAnalyzer {
             url: window.location.href,
             domain: window.location.hostname,
           },
-          selectedAreas: selectedElements.length,
-          extractedLinks: allLinks,
+          sidebarLinks,
+          contentLinks,
           summary: {
-            totalLinks: allLinks.length,
-            selectedAreasCount: selectedElements.length,
-          },
-        },
-      }
-    }
-    catch (error) {
-      console.error('提取链接失败:', error)
-      return { success: false, error: (error as Error).message }
-    }
-  }
-
-  /**
-   * 使用滚动方式提取选中元素的链接
-   */
-  async extractLinksFromSelectedElementsWithScrolling(
-    onProgress?: (progress: ScrollingProgress) => void,
-  ) {
-    const selectedElements = this.elementSelector.getSelectedElements()
-
-    if (selectedElements.length === 0) {
-      return {
-        success: false,
-        error: '请先选择要分析的页面区域',
-      }
-    }
-
-    try {
-      const allLinks: any[] = []
-
-      for (let i = 0; i < selectedElements.length; i++) {
-        const element = selectedElements[i]
-        console.log(`[DocumentAnalyzer] 开始滚动提取第 ${i + 1} 个选中区域`)
-
-        // 配置滚动提取器
-        this.scrollingExtractor = new ScrollingLinkExtractor({
-          scrollInterval: 300,
-          scrollStep: 200,
-          waitAfterScroll: 600,
-          maxScrolls: 150,
-          bottomWaitTime: 1500,
-          onProgress: (progress) => {
-            onProgress?.(progress)
-            console.log(`[DocumentAnalyzer] 区域 ${i + 1} 进度: ${progress.progressPercent.toFixed(1)}%, 链接: ${progress.extractedLinks}`)
-          },
-        })
-
-        const links = await this.scrollingExtractor.startScrollingExtraction(element, `selected-${i}`)
-        allLinks.push(...links)
-
-        console.log(`[DocumentAnalyzer] 区域 ${i + 1} 完成，提取 ${links.length} 个链接`)
-      }
-
-      return {
-        success: true,
-        data: {
-          currentPage: {
-            title: document.title,
-            url: window.location.href,
-            domain: window.location.hostname,
-          },
-          selectedAreas: selectedElements.length,
-          extractedLinks: allLinks,
-          extractionMethod: 'scrolling',
-          summary: {
-            totalLinks: allLinks.length,
-            selectedAreasCount: selectedElements.length,
+            totalLinks: sidebarLinks.length + contentLinks.length,
+            sidebarLinksCount: sidebarLinks.length,
+            contentLinksCount: contentLinks.length,
           },
         },
       }
@@ -241,15 +153,6 @@ export class DocumentAnalyzer {
     catch (error) {
       console.error('滚动提取链接失败:', error)
       return { success: false, error: (error as Error).message }
-    }
-  }
-
-  /**
-   * 停止滚动提取
-   */
-  stopScrollingExtraction() {
-    if (this.scrollingExtractor) {
-      this.scrollingExtractor.stopExtraction()
     }
   }
 

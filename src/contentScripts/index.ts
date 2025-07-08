@@ -30,25 +30,20 @@ onMessage('extractPageLinks', async ({ data }) => {
   return await analyzer.extractPageLinks(sidebarSelectors, contentSelectors)
 })
 
-onMessage('startSelectionMode', () => {
-  return analyzer.startSelectionMode()
+onMessage('extractPageLinksWithScrolling', async ({ data }) => {
+  if (!data || typeof data !== 'object') {
+    return { success: false, error: '无效的数据' }
+  }
+  const { sidebarSelectors, contentSelectors } = data as any
+  return await analyzer.extractPageLinksWithScrolling(sidebarSelectors, contentSelectors)
 })
 
-onMessage('stopSelectionMode', () => {
-  return analyzer.stopSelectionMode()
-})
-
-onMessage('extractLinksFromSelected', async () => {
-  return await analyzer.extractLinksFromSelectedElements()
-})
-
-onMessage('extractLinksFromSelectedWithScrolling', async () => {
-  return await analyzer.extractLinksFromSelectedElementsWithScrolling()
-})
-
-onMessage('stopScrollingExtraction', () => {
-  analyzer.stopScrollingExtraction()
-  return { success: true }
+onMessage('extractPageLinksWithScrolling', async ({ data }) => {
+  if (!data || typeof data !== 'object') {
+    return { success: false, error: '无效的数据' }
+  }
+  const { sidebarSelectors, contentSelectors } = data as any
+  return await analyzer.extractPageLinksWithScrolling(sidebarSelectors, contentSelectors)
 })
 
 // 处理来自background的标签页切换消息
