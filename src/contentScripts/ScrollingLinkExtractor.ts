@@ -63,9 +63,12 @@ export class ScrollingLinkExtractor {
   private abortController: AbortController | null = null
 
   constructor(options: ScrollingExtractorOptions = {}) {
+    // 计算滚动步长：默认为视口高度的80%，确保一次滚动超过3/4页
+    const defaultScrollStep = Math.max(300, Math.floor(window.innerHeight * 0.8))
+
     this.options = {
       scrollInterval: 500,
-      scrollStep: 300,
+      scrollStep: defaultScrollStep,
       waitAfterScroll: 800,
       maxScrolls: 100,
       bottomWaitTime: 2000,
