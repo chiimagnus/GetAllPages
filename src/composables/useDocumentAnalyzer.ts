@@ -103,6 +103,20 @@ export function useDocumentAnalyzer() {
     '.side-nav',
     '.doc-navigation',
     '.docs-nav',
+    // D2L.ai 和类似文档网站的选择器
+    '.globaltoc', // D2L.ai 使用的全局目录容器
+    '.localtoc', // 本地目录
+    '.sphinxsidebar', // Sphinx 文档系统的侧边栏
+    '.sphinxsidebarwrapper', // Sphinx 侧边栏包装器
+    '.document .sidebar', // 文档中的侧边栏
+    // 针对 D2L.ai 网站的特殊结构
+    'body > div:first-child', // 可能包含导航的第一个div
+    '.body .toctree-wrapper', // Sphinx toctree 包装器
+    '[class*="toctree"]', // 包含 toctree 的元素
+    // 更通用的文档导航选择器
+    'nav ul', // 导航中的列表
+    'body > div', // 页面主体中的div（可能包含导航）
+    'main > div', // 主内容区域中的div
     // 通用侧边栏选择器
     '.sidebar',
     '.nav-sidebar',

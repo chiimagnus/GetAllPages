@@ -297,6 +297,14 @@ export function isValidSidebar(element: Element): boolean {
     return links.length >= 10
   }
 
+  // 对于 D2L.ai 和类似的文档网站，采用更宽松的验证
+  if (window.location.hostname.includes('d2l.ai')) {
+    console.log(`[GetAllPages] D2L.ai文档侧边栏验证: ${element.className}, 链接数: ${links.length}`)
+
+    // D2L.ai 的导航包含大量章节链接，应该有很多链接
+    return links.length >= 20
+  }
+
   return links.length >= 5 // 其他网站至少5个链接
 }
 
