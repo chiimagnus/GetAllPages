@@ -2,3 +2,4 @@
 /node_modules
 /extension
 pnpm-lock.yaml
+/.augment
