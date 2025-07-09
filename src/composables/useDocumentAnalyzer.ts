@@ -46,10 +46,13 @@ export function useDocumentAnalyzer() {
     try {
       const result = await sendMessage('getGlobalState', {}, 'background') as any
       if (result.success && result.state) {
-        isAnalyzing.value = result.state.isAnalyzing
-        isExtracting.value = result.state.isExtracting
-        currentLinkData.value = result.state.currentLinkData
-        lastError.value = result.state.lastError
+        const state = result.state
+        isAnalyzing.value = state.isAnalyzing || false
+        isExtracting.value = state.isExtracting || false
+        currentLinkData.value = state.currentLinkData || null
+        lastError.value = state.lastError || null
+
+        // 状态恢复完成
       }
     }
     catch (error) {
@@ -207,7 +210,7 @@ export function useDocumentAnalyzer() {
     }
   }
 
-  // 使用滚动方式提取页面链接并自动保存
+  // 使用滚动方式提取页面链接（content script会自动保存）
   const extractPageLinksWithScrolling = async (tabId: number): Promise<LinkExtractionResult | null> => {
     isAnalyzing.value = true
     await updateGlobalAnalyzingState(true)
@@ -221,16 +224,6 @@ export function useDocumentAnalyzer() {
       if (result.success) {
         currentLinkData.value = result.data
         await updateGlobalAnalyzingState(false, result.data)
-
-        // 自动保存为markdown文件
-        try {
-          await generateMarkdownFile(result.data)
-        }
-        catch (saveError) {
-          console.error('自动保存失败:', saveError)
-          // 保存失败不影响分析结果
-        }
-
         return result.data
       }
       else {

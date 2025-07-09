@@ -23,18 +23,8 @@ onMounted(async () => {
 
   await checkCurrentPage()
 
-  // 如果有错误状态，显示错误信息
-  if (lastError.value) {
-    statusMessage.value = `❌ ${lastError.value}`
-  }
-  // 如果正在分析，显示分析状态
-  else if (isAnalyzing.value) {
-    statusMessage.value = '🔄 智能分析进行中...'
-  }
-  // 如果正在提取，显示提取状态
-  else if (isExtracting.value) {
-    statusMessage.value = '⏸️ 文件生成中...'
-  }
+  // 根据状态显示相应信息
+  updateStatusMessage()
 
   // 监听来自background的消息
   onMessage('operationSuccess', ({ data }) => {
@@ -48,7 +38,42 @@ onMounted(async () => {
       statusMessage.value = `错误: ${data.message}`
     }
   })
+
+  // 监听状态更新
+  onMessage('stateUpdated', ({ data }) => {
+    if (data && typeof data === 'object') {
+      const state = data as any
+      // 更新本地状态
+      if (state.isAnalyzing !== undefined) {
+        // 这里我们不能直接修改composable的状态，但可以触发状态恢复
+        restoreGlobalState().then(() => {
+          updateStatusMessage()
+        })
+      }
+    }
+  })
 })
+
+// 更新状态消息的函数
+function updateStatusMessage() {
+  // 如果有错误状态，显示错误信息
+  if (lastError.value) {
+    statusMessage.value = `❌ ${lastError.value}`
+  }
+  // 如果正在分析，显示分析状态
+  else if (isAnalyzing.value) {
+    statusMessage.value = '🔄 智能分析进行中...'
+  }
+  // 如果正在提取，显示提取状态
+  else if (isExtracting.value) {
+    statusMessage.value = '⏸️ 文件生成中...'
+  }
+  // 如果有完成的数据，显示完成信息
+  else if (currentLinkData.value) {
+    const { totalLinks } = currentLinkData.value.summary
+    statusMessage.value = `✅ 分析完成！发现 ${totalLinks} 个链接并已自动保存为Markdown文件`
+  }
+}
 
 async function checkCurrentPage() {
   try {
@@ -84,13 +109,13 @@ async function handleAnalyze() {
 
   try {
     statusMessage.value = '🔄 开始智能滚动分析...'
-    const linkData = await extractPageLinksWithScrolling(currentTab.value.id)
-    if (linkData) {
-      const { totalLinks } = linkData.summary
-      statusMessage.value = `✅ 分析完成！发现 ${totalLinks} 个链接并已自动保存为Markdown文件`
-    }
+    await extractPageLinksWithScrolling(currentTab.value.id)
+
+    // 更新状态消息
+    updateStatusMessage()
   }
-  catch {
+  catch (error) {
+    console.error('分析失败:', error)
     statusMessage.value = '❌ 分析失败，请重试'
   }
 }
@@ -120,8 +145,8 @@ const statusClass = computed(() => {
 <template>
   <main class="w-[350px] p-5 text-gray-700">
     <!-- Header -->
-    <div class="text-center mb-5">
-      <div class="text-xl font-bold text-blue-600 mb-1">
+    <div class="mb-5 text-center">
+      <div class="mb-1 text-xl text-blue-600 font-bold">
         GetAllPages
       </div>
       <div class="text-sm text-gray-500">
@@ -131,30 +156,30 @@ const statusClass = computed(() => {
 
     <!-- Status -->
     <div
-      class="p-3 rounded-lg border text-sm mb-4"
+      class="mb-4 border rounded-lg p-3 text-sm"
       :class="statusClass"
     >
       {{ statusMessage }}
     </div>
 
     <!-- Link Statistics -->
-    <div v-if="currentLinkData" class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
-      <div class="text-blue-800 font-medium mb-2">
+    <div v-if="currentLinkData" class="mb-4 border border-blue-200 rounded-lg bg-blue-50 p-3">
+      <div class="mb-2 text-blue-800 font-medium">
         📊 链接统计
       </div>
-      <div class="text-blue-600 text-sm space-y-1">
+      <div class="text-sm text-blue-600 space-y-1">
         <div>侧边栏链接数: <span class="font-medium">{{ currentLinkData.summary.sidebarLinksCount }}</span></div>
-        <div class="text-xs text-blue-500 mt-2">
+        <div class="mt-2 text-xs text-blue-500">
           专注提取侧边栏导航链接，确保高质量结果
         </div>
       </div>
     </div>
 
     <!-- Actions -->
-    <div class="space-y-3 mb-5">
+    <div class="mb-5 space-y-3">
       <!-- 智能分析按钮 -->
       <button
-        class="w-full py-3 px-4 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        class="w-full rounded-lg bg-blue-600 px-4 py-3 text-white font-medium transition-colors disabled:cursor-not-allowed hover:bg-blue-700 disabled:opacity-50"
         :disabled="pageStatus !== 'ready' || isAnalyzing"
         @click="handleAnalyze"
       >
@@ -163,7 +188,7 @@ const statusClass = computed(() => {
       </button>
 
       <button
-        class="w-full py-2 px-4 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+        class="w-full rounded-lg bg-gray-100 px-4 py-2 text-gray-700 font-medium transition-colors hover:bg-gray-200"
         @click="openOptionsPage"
       >
         ⚙️ 设置选项
@@ -173,7 +198,7 @@ const statusClass = computed(() => {
     <!-- Help Link -->
     <div class="text-center">
       <button
-        class="text-xs text-gray-500 hover:text-blue-600 transition-colors"
+        class="text-xs text-gray-500 transition-colors hover:text-blue-600"
         @click="openHelp"
       >
         GitHub开源地址

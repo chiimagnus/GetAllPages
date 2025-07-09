@@ -18,6 +18,8 @@ interface GlobalState {
   isExtracting: boolean
   currentLinkData: any | null
   lastError: string | null
+  lastCompletedAt: number | null
+  autoSaveEnabled: boolean
 }
 
 const globalState: GlobalState = {
@@ -25,6 +27,20 @@ const globalState: GlobalState = {
   isExtracting: false,
   currentLinkData: null,
   lastError: null,
+  lastCompletedAt: null,
+  autoSaveEnabled: true,
+}
+
+// 广播状态变化到所有popup
+async function broadcastStateChange() {
+  try {
+    // 发送状态更新到popup，使用JSON序列化确保类型兼容
+    await sendMessage('stateUpdated', JSON.parse(JSON.stringify(globalState)), 'popup')
+  }
+  catch {
+    // popup可能未打开，忽略错误
+    console.log('[Background] 无法广播状态变化，popup可能未打开')
+  }
 }
 
 // 链接提取和Markdown生成服务
@@ -37,20 +53,34 @@ class LinkExtractionService {
     }
 
     this.isProcessing = true
+    globalState.isExtracting = true
 
     try {
       const markdownContent = this.generateMarkdownFromLinks(linkData)
       await this.downloadFile(markdownContent, 'extracted-links.md', 'text/markdown')
 
+      // 更新全局状态
+      globalState.lastCompletedAt = Date.now()
+      globalState.currentLinkData = linkData
+      globalState.lastError = null
+
       // 通知完成
       this.notifySuccess('Markdown文件已生成并下载')
+
+      console.log('[GetAllPages] Markdown文件生成完成，链接数量:', linkData?.summary?.totalLinks || 0)
+
+      // 广播状态变化
+      await broadcastStateChange()
     }
     catch (error) {
       console.error('生成文件过程出错:', error)
+      globalState.lastError = (error as Error).message
       this.notifyError((error as Error).message)
+      throw error
     }
     finally {
       this.isProcessing = false
+      globalState.isExtracting = false
     }
   }
 
@@ -197,22 +227,40 @@ onMessage('getGlobalState', () => {
 })
 
 // 更新分析状态
-onMessage('updateAnalyzingState', ({ data }) => {
+onMessage('updateAnalyzingState', async ({ data }) => {
   const { isAnalyzing, linkData, error } = data as any
   globalState.isAnalyzing = isAnalyzing
+
   if (linkData) {
     globalState.currentLinkData = linkData
+    // 如果分析完成且有数据，记录完成时间
+    if (!isAnalyzing && linkData) {
+      globalState.lastCompletedAt = Date.now()
+    }
   }
+
   if (error) {
     globalState.lastError = error
   }
+  else if (!isAnalyzing) {
+    // 分析成功完成时清除错误
+    globalState.lastError = null
+  }
+
+  // 广播状态变化
+  await broadcastStateChange()
+
   return { success: true }
 })
 
 // 更新提取状态
-onMessage('updateExtractingState', ({ data }) => {
+onMessage('updateExtractingState', async ({ data }) => {
   const { isExtracting } = data as any
   globalState.isExtracting = isExtracting
+
+  // 广播状态变化
+  await broadcastStateChange()
+
   return { success: true }
 })
 
