@@ -3,3 +3,4 @@
 /extension
 pnpm-lock.yaml
 /.augment
+src/auto-imports.d.ts
