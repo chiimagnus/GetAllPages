@@ -47,7 +47,7 @@ function updateStatusMessage() {
   }
   // 如果正在分析，显示分析状态
   else if (isAnalyzing.value) {
-    statusMessage.value = '🔄 智能分析进行中...'
+    statusMessage.value = '🔄 智能分析进行中...\n⚠️ 请保持当前标签页，可以切换应用但不要切换网页'
   }
   // 如果正在提取，显示提取状态
   else if (isExtracting.value) {
@@ -93,7 +93,7 @@ async function handleAnalyze() {
     return
 
   try {
-    statusMessage.value = '🔄 开始智能滚动分析...'
+    statusMessage.value = '🔄 智能分析进行中...\n⚠️ 请保持当前标签页，可以切换应用但不要切换网页'
     await extractPageLinksWithScrolling(currentTab.value.id)
 
     // 更新状态消息
@@ -145,6 +145,28 @@ const statusClass = computed(() => {
       :class="statusClass"
     >
       {{ statusMessage }}
+    </div>
+
+    <!-- 分析中的重要提示 -->
+    <div v-if="isAnalyzing" class="mb-4 border border-yellow-200 rounded-lg bg-yellow-50 p-3">
+      <div class="flex items-start space-x-2">
+        <div class="text-lg text-yellow-600">
+          ⚠️
+        </div>
+        <div class="text-sm text-yellow-800">
+          <div class="mb-1 font-medium">
+            重要提示
+          </div>
+          <div class="space-y-1">
+            <div>• 请保持当前标签页处于活跃状态</div>
+            <div>• 不要切换到其他标签页</div>
+            <div>• 但可以正常切换到其他应用程序</div>
+            <div class="mt-2 text-xs text-yellow-600">
+              切换标签页可能导致分析结果不完整
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Link Statistics -->
