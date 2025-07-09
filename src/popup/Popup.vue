@@ -47,7 +47,7 @@ function updateStatusMessage() {
   }
   // 如果正在分析，显示分析状态
   else if (isAnalyzing.value) {
-    statusMessage.value = '🔄 智能分析进行中...\n⚠️ 请保持当前标签页，可以切换应用但不要切换网页'
+    statusMessage.value = '🔄 智能分析进行中...'
   }
   // 如果正在提取，显示提取状态
   else if (isExtracting.value) {
@@ -93,7 +93,7 @@ async function handleAnalyze() {
     return
 
   try {
-    statusMessage.value = '🔄 智能分析进行中...\n⚠️ 请保持当前标签页，可以切换应用但不要切换网页'
+    statusMessage.value = '🔄 智能分析进行中...'
     await extractPageLinksWithScrolling(currentTab.value.id)
 
     // 更新状态消息
