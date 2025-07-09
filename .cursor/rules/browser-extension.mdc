@@ -1,0 +1,123 @@
+# 浏览器插件开发规范
+
+专注于 WebExtension API 使用、跨脚本通信和权限配置。
+
+## 插件架构
+
+### 核心组件
+- [src/background/main.ts](mdc:src/background/main.ts) - 后台脚本，插件生命周期管理
+- [src/contentScripts/index.ts](mdc:src/contentScripts/index.ts) - 内容脚本入口
+- [src/popup/](mdc:src/popup/) - 用户界面
+- [src/manifest.ts](mdc:src/manifest.ts) - 插件权限与配置
+
+## 跨脚本通信
+
+### webext-bridge 通信模式
+```typescript
+// 后台脚本 → 内容脚本
+import { sendMessage } from 'webext-bridge/background'
+await sendMessage('extractContent', { url }, 'content-script')
+
+// 内容脚本接收
+import { onMessage } from 'webext-bridge/content-script'
+onMessage('extractContent', async (message) => {
+  return { success: true, data: result }
+})
+
+// Popup → 后台脚本
+import { sendMessage } from 'webext-bridge/popup'
+await sendMessage('getAnalysisStatus', {}, 'background')
+```
+
+### 消息类型定义
+```typescript
+interface MessageMap {
+  extractContent: { url: string } → { success: boolean; data?: string }
+  getStatus: {} → { running: boolean; progress: number }
+  downloadMarkdown: { content: string } → { fileUrl: string }
+}
+```
+
+## 权限配置
+
+### manifest.ts 核心权限
+```typescript
+permissions: [
+  'tabs',           // 标签页访问
+  'storage',        // 本地存储
+  'activeTab',      // 当前页面
+  'downloads',      // 文件下载
+  'scripting',      // 脚本注入
+],
+host_permissions: ['*://*/*'], // 网站访问权限
+```
+
+### 权限使用原则
+- **最小权限**: 仅申请必需权限
+- **动态权限**: 运行时请求敏感权限
+- **用户提示**: 清晰说明权限用途
+
+## 内容脚本注入
+
+### 安全注入模式
+```typescript
+// 避免重复注入
+(function() {
+  'use strict'
+  if (window.__GETALLPAGES_INJECTED__) return
+  window.__GETALLPAGES_INJECTED__ = true
+  
+  // 核心逻辑
+})()
+```
+
+### 动态脚本注入
+```typescript
+// 后台脚本中
+chrome.scripting.executeScript({
+  target: { tabId },
+  files: ['content-scripts/index.js']
+})
+```
+
+## 调试与日志
+
+### 日志级别规范
+- **后台脚本**: `console.log` 可用
+- **内容脚本**: 优先 `console.warn`，避免污染页面控制台
+- **生产环境**: 统一使用 `console.warn` 前缀 `[GetAllPages]`
+
+### 开发调试
+```typescript
+// 开发模式检测
+const isDev = import.meta.env.DEV
+
+if (isDev) {
+  console.log('[Debug] Extension loaded')
+}
+```
+
+## 安全最佳实践
+
+### CSP 配置
+```json
+{
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}
+```
+
+### 输入验证
+```typescript
+// 验证消息来源
+onMessage('command', (message) => {
+  if (!message.data || typeof message.data.url !== 'string') {
+    throw new Error('Invalid message format')
+  }
+})
+```
+
+## 参考实现
+- [DocumentAnalyzer.ts](mdc:src/contentScripts/DocumentAnalyzer.ts) - 文档分析核心逻辑
+- [index.ts](mdc:src/contentScripts/index.ts) - 内容脚本入口点

@@ -1,0 +1,97 @@
+---
+alwaysApply: true
+---
+# GetAllPages 开发规范总索引
+
+基于 Vue 3 + TypeScript 的浏览器插件项目，用于智能提取网站文档内容并生成结构化 Markdown。
+
+## 技术栈
+- **前端**: Vue 3 + TypeScript + UnoCSS
+- **构建**: Vite + pnpm
+- **插件**: WebExtension API + webext-bridge
+
+## 核心规范参考
+- [@browser-extension.mdc](.cursor/rules/browser-extension.mdc) - 插件架构与通信机制
+- [@content-scripts.mdc](.cursor/rules/content-scripts.mdc) - 内容脚本开发规范
+
+## 项目结构
+```
+src/
+├── background/        # 后台脚本
+├── contentScripts/    # 内容脚本 (核心功能)
+├── popup/            # 弹窗界面
+└── composables/      # Vue 组合函数
+```
+
+## 开发原则
+- **职责单一**: 每个模块功能明确，避免耦合
+- **MVP 优先**: 先实现核心功能，再优化扩展
+- **类型安全**: 严格使用 TypeScript，避免 any
+- **Composition API**: 使用 Vue 3 组合式 API
+- **最小权限**: 仅申请必需的浏览器权限
+
+## 代码规范
+- 使用 ESLint + Prettier 统一代码风格
+- 组件命名 PascalCase，文件名与组件名一致
+- 函数命名 camelCase，常量 UPPER_SNAKE_CASE
+- 优先使用 `const`，避免 `var`
+- 错误处理使用 try-catch，提供用户友好提示
+
+## 性能要求
+- 内容脚本避免频繁 DOM 操作
+- 使用防抖节流优化事件处理
+- 异步操作使用 `requestIdleCallback`
+- 内存泄漏检查与清理
+
+## 安全考虑
+- 验证所有用户输入
+- 避免 XSS 攻击
+- CSP 策略配置
+- 最小权限原则
+# GetAllPages 开发规范总索引
+
+基于 Vue 3 + TypeScript 的浏览器插件项目，用于智能提取网站文档内容并生成结构化 Markdown。
+
+## 技术栈
+- **前端**: Vue 3 + TypeScript + UnoCSS
+- **构建**: Vite + pnpm
+- **插件**: WebExtension API + webext-bridge
+
+## 核心规范参考
+- [@browser-extension.mdc](.cursor/rules/browser-extension.mdc) - 插件架构与通信机制
+- [@content-scripts.mdc](.cursor/rules/content-scripts.mdc) - 内容脚本开发规范
+
+## 项目结构
+```
+src/
+├── background/        # 后台脚本
+├── contentScripts/    # 内容脚本 (核心功能)
+├── popup/            # 弹窗界面
+└── composables/      # Vue 组合函数
+```
+
+## 开发原则
+- **职责单一**: 每个模块功能明确，避免耦合
+- **MVP 优先**: 先实现核心功能，再优化扩展
+- **类型安全**: 严格使用 TypeScript，避免 any
+- **Composition API**: 使用 Vue 3 组合式 API
+- **最小权限**: 仅申请必需的浏览器权限
+
+## 代码规范
+- 使用 ESLint + Prettier 统一代码风格
+- 组件命名 PascalCase，文件名与组件名一致
+- 函数命名 camelCase，常量 UPPER_SNAKE_CASE
+- 优先使用 `const`，避免 `var`
+- 错误处理使用 try-catch，提供用户友好提示
+
+## 性能要求
+- 内容脚本避免频繁 DOM 操作
+- 使用防抖节流优化事件处理
+- 异步操作使用 `requestIdleCallback`
+- 内存泄漏检查与清理
+
+## 安全考虑
+- 验证所有用户输入
+- 避免 XSS 攻击
+- CSP 策略配置
+- 最小权限原则

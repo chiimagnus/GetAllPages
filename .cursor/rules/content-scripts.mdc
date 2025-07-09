@@ -1,0 +1,248 @@
+# 内容脚本开发规范
+
+专注于网页中执行的核心功能模块设计与优化。
+
+## 核心模块架构
+
+### 主要组件职责
+- [DocumentAnalyzer.ts](mdc:src/contentScripts/DocumentAnalyzer.ts) - 文档结构分析与内容提取
+- [LinkExtractor.ts](mdc:src/contentScripts/LinkExtractor.ts) - 页面链接发现与分类
+- [ScrollingLinkExtractor.ts](mdc:src/contentScripts/ScrollingLinkExtractor.ts) - 动态加载内容处理
+- [ElementSelector.ts](mdc:src/contentScripts/ElementSelector.ts) - 智能元素定位
+- [StyleManager.ts](mdc:src/contentScripts/StyleManager.ts) - 页面样式注入管理
+- [DOMObserver.ts](mdc:src/contentScripts/DOMObserver.ts) - DOM 变化监听
+
+### 工具模块
+- [utils.ts](mdc:src/contentScripts/utils.ts) - 通用工具函数
+- [AppleDocsOptimizer.ts](mdc:src/contentScripts/AppleDocsOptimizer.ts) - 特定网站优化器
+
+## 模块设计原则
+
+### 单一职责设计
+```typescript
+// ✅ 良好的模块设计
+export class DocumentAnalyzer {
+  private readonly options: AnalysisOptions
+  
+  constructor(options: AnalysisOptions) {
+    this.options = options
+  }
+  
+  // 职责1: 分析文档结构
+  analyzeStructure(): DocumentStructure {
+    return this.parseHeadings()
+  }
+  
+  // 职责2: 提取文本内容
+  extractContent(): string {
+    return this.processTextNodes()
+  }
+  
+  // 私有方法，内部实现
+  private parseHeadings(): DocumentStructure { }
+  private processTextNodes(): string { }
+}
+```
+
+### 接口驱动开发
+```typescript
+// 定义清晰的接口契约
+interface ContentExtractor {
+  extract(element: Element): Promise<ExtractedContent>
+  validate(content: ExtractedContent): boolean
+}
+
+interface ExtractedContent {
+  text: string
+  links: string[]
+  images: string[]
+  metadata: Record<string, any>
+}
+```
+
+## 性能优化策略
+
+### 防抖节流
+```typescript
+// 防抖：延迟执行
+export function debounce<T extends (...args: any[]) => any>(
+  func: T,
+  wait: number
+): T {
+  let timeout: NodeJS.Timeout
+  return ((...args: any[]) => {
+    clearTimeout(timeout)
+    timeout = setTimeout(() => func.apply(this, args), wait)
+  }) as T
+}
+
+// 节流：限制频率
+export function throttle<T extends (...args: any[]) => any>(
+  func: T,
+  limit: number
+): T {
+  let inThrottle: boolean
+  return ((...args: any[]) => {
+    if (!inThrottle) {
+      func.apply(this, args)
+      inThrottle = true
+      setTimeout(() => inThrottle = false, limit)
+    }
+  }) as T
+}
+```
+
+### 异步处理优化
+```typescript
+// 使用 requestIdleCallback 处理耗时操作
+function processLargeDataset(data: any[]) {
+  return new Promise<void>((resolve) => {
+    const processChunk = (startIndex: number) => {
+      const endIndex = Math.min(startIndex + 100, data.length)
+      
+      // 处理数据块
+      for (let i = startIndex; i < endIndex; i++) {
+        processItem(data[i])
+      }
+      
+      if (endIndex < data.length) {
+        // 继续处理下一块
+        requestIdleCallback(() => processChunk(endIndex))
+      } else {
+        resolve()
+      }
+    }
+    
+    requestIdleCallback(() => processChunk(0))
+  })
+}
+```
+
+### DOM 操作优化
+```typescript
+// ✅ 批量 DOM 操作
+function updateMultipleElements(elements: Element[], className: string) {
+  // 使用 DocumentFragment 减少重排重绘
+  const fragment = document.createDocumentFragment()
+  
+  elements.forEach(el => {
+    const clone = el.cloneNode(true) as Element
+    clone.classList.add(className)
+    fragment.appendChild(clone)
+  })
+  
+  // 一次性添加到 DOM
+  document.body.appendChild(fragment)
+}
+
+// ❌ 避免频繁 DOM 查询
+// const elements = document.querySelectorAll('.item') // 每次都查询
+
+// ✅ 缓存 DOM 查询结果
+const cachedElements = document.querySelectorAll('.item')
+```
+
+## 错误处理与监控
+
+### 统一错误处理
+```typescript
+// 错误结果类型
+type Result<T, E = Error> = 
+  | { success: true; data: T }
+  | { success: false; error: E }
+
+// 异步操作包装
+async function safeExtractContent(element: Element): Promise<Result<string>> {
+  try {
+    const content = await extractContent(element)
+    return { success: true, data: content }
+  } catch (error) {
+    console.warn('[GetAllPages] Content extraction failed:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error : new Error(String(error))
+    }
+  }
+}
+```
+
+### 兼容性检测
+```typescript
+// API 可用性检测
+function checkAPISupport(): boolean {
+  return !!(
+    window.MutationObserver &&
+    window.requestIdleCallback &&
+    document.querySelector
+  )
+}
+
+// 降级方案
+function getElementWithFallback(selector: string): Element | null {
+  if (document.querySelector) {
+    return document.querySelector(selector)
+  }
+  
+  // 降级到基础方法
+  return document.getElementById(selector.replace('#', ''))
+}
+```
+
+## 内存管理
+
+### 事件监听器清理
+```typescript
+export class DOMObserver {
+  private observer: MutationObserver | null = null
+  private listeners: Array<() => void> = []
+  
+  start(): void {
+    this.observer = new MutationObserver(this.handleMutation.bind(this))
+    this.observer.observe(document.body, { childList: true, subtree: true })
+  }
+  
+  stop(): void {
+    // 清理观察器
+    this.observer?.disconnect()
+    this.observer = null
+    
+    // 清理事件监听器
+    this.listeners.forEach(cleanup => cleanup())
+    this.listeners = []
+  }
+  
+  addListener(element: Element, event: string, handler: EventListener): void {
+    element.addEventListener(event, handler)
+    this.listeners.push(() => element.removeEventListener(event, handler))
+  }
+}
+```
+
+## 调试支持
+
+### 开发模式日志
+```typescript
+const DEBUG = import.meta.env.DEV
+
+function debugLog(message: string, data?: any): void {
+  if (DEBUG) {
+    console.log(`[GetAllPages Debug] ${message}`, data)
+  }
+}
+
+// 性能监控
+function measurePerformance<T>(name: string, fn: () => T): T {
+  if (!DEBUG) return fn()
+  
+  const start = performance.now()
+  const result = fn()
+  const end = performance.now()
+  
+  debugLog(`${name} took ${end - start}ms`)
+  return result
+}
+```
+
+- 将复杂逻辑拆分为小函数
+- 使用 TypeScript 接口定义数据结构
+- 导出清晰的公共 API
