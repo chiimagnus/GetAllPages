@@ -51,10 +51,17 @@ pnpm build
 
 ### 项目结构
 
+```bash
+scripts/                # 构建和开发相关的脚本
+├── utils.ts            # 构建工具函数，提供路径解析、环境判断等基础功能
+├── prepare.ts          # 开发环境准备脚本，生成HTML存根文件，监听文件变化
+├── manifest.ts         # 生成扩展manifest.json文件的脚本
 ```
-src/
-├── background/          # 后台脚本
-├── contentScripts/      # 内容脚本
+
+```bash
+src/                    # 核心代码
+├── background/         # 后台脚本
+├── contentScripts/     # 内容脚本
 ├── popup/              # 弹窗界面
 ├── options/            # 设置页面
 ├── composables/        # Vue 组合式函数

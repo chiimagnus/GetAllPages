@@ -51,13 +51,20 @@ pnpm build
 
 ### Project Structure
 
+```bash
+scripts/                # Scripts related to build and development
+├── utils.ts            # Build utility functions, providing path resolution, environment detection, and other basic functions
+├── prepare.ts          # Development environment setup script, generates HTML stub files, and monitors file changes
+├── manifest.ts         # Script to generate the extension's manifest.json file
 ```
-src/
-├── background/          # Background scripts
-├── contentScripts/      # Content scripts
+
+```bash
+src/                    # Core code
+├── background/         # Background scripts
+├── contentScripts/     # Content scripts
 ├── popup/              # Popup interface
 ├── options/            # Settings page
-├── composables/        # Vue composables
+├── composables/        # Vue composable functions
 └── components/         # Vue components
 ```
 
