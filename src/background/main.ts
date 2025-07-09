@@ -141,12 +141,30 @@ class LinkExtractionService {
 
   // 通知成功
   notifySuccess(message: string) {
-    sendMessage('operationSuccess', { message }, 'popup').catch(console.error)
+    // 使用浏览器通知API而不是消息传递
+    browser.notifications.create({
+      type: 'basic',
+      iconUrl: 'icon-48.png',
+      title: 'GetAllPages',
+      message,
+    }).catch(() => {
+      // 如果通知失败，记录到控制台
+      console.log('[GetAllPages]', message)
+    })
   }
 
   // 通知错误
   notifyError(message: string) {
-    sendMessage('operationError', { message }, 'popup').catch(console.error)
+    // 使用浏览器通知API而不是消息传递
+    browser.notifications.create({
+      type: 'basic',
+      iconUrl: 'icon-48.png',
+      title: 'GetAllPages - 错误',
+      message,
+    }).catch(() => {
+      // 如果通知失败，记录到控制台
+      console.error('[GetAllPages]', message)
+    })
   }
 
   // 下载文件

@@ -26,30 +26,15 @@ onMounted(async () => {
   // 根据状态显示相应信息
   updateStatusMessage()
 
-  // 监听来自background的消息
-  onMessage('operationSuccess', ({ data }) => {
-    if (data && typeof data === 'object' && 'message' in data) {
-      statusMessage.value = data.message as string
-    }
-  })
-
-  onMessage('operationError', ({ data }) => {
-    if (data && typeof data === 'object' && 'message' in data) {
-      statusMessage.value = `错误: ${data.message}`
-    }
-  })
+  // 监听来自background的消息（现在使用浏览器通知，不再需要这些消息监听）
 
   // 监听状态更新
   onMessage('stateUpdated', ({ data }) => {
     if (data && typeof data === 'object') {
-      const state = data as any
-      // 更新本地状态
-      if (state.isAnalyzing !== undefined) {
-        // 这里我们不能直接修改composable的状态，但可以触发状态恢复
-        restoreGlobalState().then(() => {
-          updateStatusMessage()
-        })
-      }
+      // 触发状态恢复以同步最新状态
+      restoreGlobalState().then(() => {
+        updateStatusMessage()
+      })
     }
   })
 })

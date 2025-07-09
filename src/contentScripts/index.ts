@@ -50,10 +50,28 @@ onMessage('extractPageLinksWithScrolling', async ({ data }) => {
         }, 'background')
 
         console.log('[GetAllPages] 滚动提取完成并已自动保存markdown文件')
+
+        // 确保分析状态更新为完成
+        await sendMessage('updateAnalyzingState', {
+          isAnalyzing: false,
+          linkData: JSON.parse(JSON.stringify(result.data)),
+          error: null,
+        }, 'background')
       }
       catch (saveError) {
         console.error('[GetAllPages] 自动保存失败:', saveError)
-        // 保存失败不影响提取结果的返回
+        // 保存失败时也要更新状态，但标记错误
+        try {
+          const { sendMessage } = await import('webext-bridge/content-script')
+          await sendMessage('updateAnalyzingState', {
+            isAnalyzing: false,
+            linkData: result.data ? JSON.parse(JSON.stringify(result.data)) : null,
+            error: `保存失败: ${(saveError as Error).message}`,
+          }, 'background')
+        }
+        catch {
+          // 忽略状态更新失败
+        }
       }
     }
 
